@@ -10,6 +10,7 @@ const std = @import("std");
 const posix = std.posix;
 
 const Hook = @import("../hook.zig").Hook;
+const DetectedList = @import("../hook.zig").DetectedList;
 const Direction = @import("../main.zig").Direction;
 const process = @import("../process.zig");
 const log = @import("../log.zig");
@@ -20,6 +21,7 @@ pub const hook = Hook{
     .canMoveFn = &canMove,
     .moveFocusFn = &moveFocus,
     .moveToEdgeFn = &moveToEdge,
+    .discoverInnerFn = &discoverInner,
 };
 
 fn detect(child_pid: i32, cmd: []const u8, exe: []const u8, _: []const u8) ?i32 {
@@ -112,6 +114,38 @@ fn moveToEdge(pid: i32, dir: Direction, _: u32) void {
 
     var select_buf: [64]u8 = undefined;
     _ = runTmux(&select_argv, &select_buf);
+}
+
+// ─── Inner process discovery ───
+
+/// Discover hooks running inside this tmux client's active pane.
+/// Queries the pane's foreground process PID and walks its process tree
+/// to find inner applications (e.g., nvim running inside a tmux pane).
+fn discoverInner(pid: i32, enabled_hooks: []const *const Hook, result: *DetectedList, depth: u32) void {
+    var socket_buf: [256]u8 = undefined;
+    const socket_path = tmuxSocketPath(&socket_buf, pid) orelse return;
+
+    var target_buf: [256]u8 = undefined;
+    const target = getClientTarget(socket_path, pid, &target_buf) orelse return;
+
+    // Query the PID of the process running in the active pane.
+    // tmux display-message -t <pane_id> -p '#{pane_pid}'
+    const argv = [_][]const u8{ "tmux", "-S", socket_path, "display-message", "-t", target.pane_id, "-p", "#{pane_pid}" };
+
+    var out_buf: [64]u8 = undefined;
+    const output = runTmux(&argv, &out_buf) orelse return;
+
+    const pane_pid = parsePanePid(output) orelse return;
+    log.log("tmux: pane {s} has PID {d}, walking inner tree", .{ target.pane_id, pane_pid });
+
+    process.walkTree(pane_pid, enabled_hooks, result, depth);
+}
+
+/// Parse a numeric PID from tmux display-message output (e.g., "12345").
+fn parsePanePid(output: []const u8) ?i32 {
+    const trimmed = std.mem.trimRight(u8, output, "\n\r \t");
+    if (trimmed.len == 0) return null;
+    return std.fmt.parseInt(i32, trimmed, 10) catch null;
 }
 
 // ─── Helpers ───
@@ -427,4 +461,21 @@ test "parseClientTarget returns null for empty pane_id" {
 test "parseClientTarget returns null for empty session_window" {
     var buf: [64]u8 = undefined;
     try std.testing.expectEqual(@as(?ClientTarget, null), parseClientTarget("%3|", &buf));
+}
+
+test "parsePanePid parses valid PID" {
+    try std.testing.expectEqual(@as(?i32, 12345), parsePanePid("12345"));
+    try std.testing.expectEqual(@as(?i32, 1), parsePanePid("1"));
+}
+
+test "parsePanePid handles trailing whitespace" {
+    try std.testing.expectEqual(@as(?i32, 12345), parsePanePid("12345\n"));
+    try std.testing.expectEqual(@as(?i32, 42), parsePanePid("42\r\n"));
+    try std.testing.expectEqual(@as(?i32, 99), parsePanePid("99 "));
+}
+
+test "parsePanePid returns null for invalid input" {
+    try std.testing.expectEqual(@as(?i32, null), parsePanePid(""));
+    try std.testing.expectEqual(@as(?i32, null), parsePanePid("abc"));
+    try std.testing.expectEqual(@as(?i32, null), parsePanePid("\n"));
 }

@@ -1,7 +1,7 @@
-/// Neovim hook — detect nvim --embed instances and navigate splits.
+/// Neovim hook — detect nvim instances and navigate splits.
 ///
 /// Detection: matches processes where argv[0] contains "nvim" or /proc/<pid>/exe
-/// resolves to nvim, AND argv[1] contains "--embed".
+/// resolves to nvim. Works for both embedded (--embed) and terminal nvim.
 ///
 /// Navigation: connects to nvim's Unix socket ($XDG_RUNTIME_DIR/nvim.<pid>.0),
 /// uses msgpack-RPC to query winnr() / winnr('<dir>') and send wincmd commands.
@@ -23,14 +23,12 @@ pub const hook = Hook{
     .moveToEdgeFn = &moveToEdge,
 };
 
-/// Detect an nvim --embed process.
+/// Detect an nvim process.
 /// Returns child_pid if matched, null otherwise.
-fn detect(child_pid: i32, cmd: []const u8, exe: []const u8, arg: []const u8) ?i32 {
+fn detect(child_pid: i32, cmd: []const u8, exe: []const u8, _: []const u8) ?i32 {
     const is_nvim = std.mem.indexOf(u8, cmd, "nvim") != null or
         std.mem.indexOf(u8, exe, "nvim") != null;
     if (!is_nvim) return null;
-
-    if (std.mem.indexOf(u8, arg, "--embed") == null) return null;
 
     return child_pid;
 }
@@ -186,18 +184,17 @@ fn nvimSocketPath(buf: []u8, pid: i32) ?[]const u8 {
 
 // ─── Tests ───
 
-test "detect matches nvim --embed" {
+test "detect matches nvim" {
+    try std.testing.expectEqual(@as(?i32, 42), detect(42, "nvim", "", ""));
     try std.testing.expectEqual(@as(?i32, 42), detect(42, "nvim", "", "--embed"));
     try std.testing.expectEqual(@as(?i32, 42), detect(42, "vi", "/usr/bin/nvim", "--embed"));
+    try std.testing.expectEqual(@as(?i32, 42), detect(42, "nvim", "", "file.txt"));
+    try std.testing.expectEqual(@as(?i32, 42), detect(42, "vi", "/usr/bin/nvim", ""));
 }
 
 test "detect rejects non-nvim" {
     try std.testing.expectEqual(@as(?i32, null), detect(42, "bash", "/usr/bin/bash", ""));
-}
-
-test "detect rejects nvim without --embed" {
-    try std.testing.expectEqual(@as(?i32, null), detect(42, "nvim", "", ""));
-    try std.testing.expectEqual(@as(?i32, null), detect(42, "nvim", "", "--headless"));
+    try std.testing.expectEqual(@as(?i32, null), detect(42, "vim", "/usr/bin/vim", ""));
 }
 
 test "nvimSocketPath returns path with pid" {

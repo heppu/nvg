@@ -32,7 +32,16 @@ pub const Hook = struct {
     /// Move focus to the edge closest to where the user came from.
     /// Called after sway moves window focus into a window containing this app.
     moveToEdgeFn: *const fn (pid: i32, dir: Direction, timeout_ms: u32) void,
+
+    /// Discover inner hooks that live in a separate process tree.
+    /// For example, tmux implements this to find nvim running inside a pane —
+    /// the tmux server's process tree is separate from the terminal's tree.
+    /// Called by detectAll after the initial process tree walk.
+    discoverInnerFn: *const fn (pid: i32, enabled_hooks: []const *const Hook, result: *DetectedList, depth: u32) void = &noopDiscoverInner,
 };
+
+/// Default no-op implementation for hooks that don't contain inner processes.
+pub fn noopDiscoverInner(_: i32, _: []const *const Hook, _: *DetectedList, _: u32) void {}
 
 /// A detected hook instance with its matched PID and tree depth.
 pub const DetectedHook = struct {
@@ -79,6 +88,17 @@ pub const all_hooks = [_]*const Hook{
 pub fn detectAll(focused_pid: i32, enabled_hooks: []const *const Hook) DetectedList {
     var result = DetectedList{};
     process.walkTree(focused_pid, enabled_hooks, &result, 0);
+
+    // Ask each detected hook to discover inner hooks in separate process trees.
+    // For example, tmux queries its active pane's PID and walks that tree to
+    // find nvim or other apps running inside the pane.
+    // Snapshot the current length — we only iterate hooks from the initial walk,
+    // not any newly discovered inner hooks (which are leaves, not containers).
+    const initial_len = result.len;
+    for (result.items[0..initial_len]) |detected| {
+        detected.hook.discoverInnerFn(detected.pid, enabled_hooks, &result, detected.depth + 1);
+    }
+
     return result;
 }
 
