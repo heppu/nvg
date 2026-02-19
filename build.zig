@@ -28,6 +28,20 @@ pub fn build(b: *std.Build) void {
         .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
     });
 
+    // Coverage-specific test binary built with the LLVM backend.
+    // Zig's self-hosted backend emits a DWARF v5 vendor extension (content type
+    // 0x2001) in .debug_line that elfutils/libdw cannot parse, causing kcov to
+    // report zero coverage. LLVM produces standard DWARF that kcov can consume.
+    const coverage_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
+        .use_llvm = true,
+    });
+
     const run_exe_tests = b.addRunArtifact(exe_tests);
     if (b.args) |args| {
         run_exe_tests.addArgs(args);
@@ -35,34 +49,28 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_tests.step);
 
-    // Coverage step: run tests under kcov via Docker.
+    // Coverage step: run tests under kcov.
     // Usage: zig build coverage -- --junit <path>
-    // Requires Docker to be installed and the kcov/kcov image available.
-    const install_tests = b.addInstallArtifact(exe_tests, .{});
-    const root = b.build_root.path orelse @panic("build root path is required for coverage");
-    const uid = std.os.linux.getuid();
-    const gid = std.os.linux.getgid();
+    // Requires kcov to be installed on the system.
+    const kcov_bin = b.findProgram(&.{"kcov"}, &.{}) catch "kcov";
     const coverage_cmd = b.addSystemCommand(&.{
-        "docker",         "run",                "--rm",
-        "--security-opt", "seccomp=unconfined", "-v",
-    });
-    coverage_cmd.addArg(b.fmt("{s}:{s}", .{ root, root }));
-    coverage_cmd.addArgs(&.{ "--user", b.fmt("{d}:{d}", .{ uid, gid }) });
-    coverage_cmd.addArgs(&.{
-        "-w",
-        root,
-        "kcov/kcov",
-        "kcov",
+        kcov_bin,
+        "--clean",
+        "--cobertura-only",
         "--include-pattern=src/",
-        b.fmt("{s}/zig-out/coverage", .{root}),
-        b.fmt("{s}/zig-out/bin/test", .{root}),
     });
+    const coverage_output = coverage_cmd.addOutputDirectoryArg(".");
+    coverage_cmd.addArtifactArg(coverage_tests);
     if (b.args) |args| {
         coverage_cmd.addArgs(args);
     }
-    coverage_cmd.step.dependOn(&install_tests.step);
-    const coverage_step = b.step("coverage", "Generate test coverage (requires Docker)");
-    coverage_step.dependOn(&coverage_cmd.step);
+    const install_coverage = b.addInstallDirectory(.{
+        .source_dir = coverage_output,
+        .install_dir = .{ .custom = "coverage" },
+        .install_subdir = "",
+    });
+    const coverage_step = b.step("coverage", "Generate test coverage (requires kcov)");
+    coverage_step.dependOn(&install_coverage.step);
 
     // Release step: build a ReleaseSafe binary and generate a SHA256 checksum.
     // Usage: zig build release

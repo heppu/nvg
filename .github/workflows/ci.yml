@@ -20,14 +20,36 @@ jobs:
       - name: Check formatting
         run: zig fmt --check src/ build.zig test_runner.zig
 
+      - name: Install kcov
+        run: |
+          sudo tee /etc/apt/sources.list.d/plucky.sources > /dev/null <<'EOF'
+          Types: deb
+          URIs: http://archive.ubuntu.com/ubuntu/
+          Suites: plucky
+          Components: universe
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo tee /etc/apt/preferences.d/plucky-pin > /dev/null <<'EOF'
+          Package: *
+          Pin: release n=plucky
+          Pin-Priority: -10
+
+          Package: kcov
+          Pin: release n=plucky
+          Pin-Priority: 500
+          EOF
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends kcov
+
       - name: Run tests with coverage
         run: zig build coverage -- --junit zig-out/test-results.xml
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v5
         with:
           files: zig-out/test-results.xml
+          report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage to Codecov
