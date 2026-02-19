@@ -2,60 +2,50 @@ name: CI
 
 on:
   push:
-    branches: ["*"]
+    branches: ["main"]
     tags: ["v*"]
   pull_request:
     branches: [main]
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: mlugg/setup-zig@v1
-        with:
-          version: 0.15.2
-
-      - name: Check formatting
-        run: zig fmt --check src/ build.zig
-
-      - name: Build (Debug)
-        run: zig build
-
-      - name: Build (ReleaseSafe)
-        run: zig build -Doptimize=ReleaseSafe
-
-      - name: Test
-        run: zig build test
-
-  release:
-    needs: ci
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
     permissions:
       contents: write
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v2
+
+      - name: Check formatting
+        run: zig fmt --check src/ build.zig test_runner.zig
+
+      - name: Run tests with coverage
+        run: zig build coverage -- --junit zig-out/test-results.xml
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
         with:
-          version: 0.15.2
+          files: zig-out/test-results.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Build release binary
-        run: zig build -Doptimize=ReleaseSafe
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          directory: zig-out/coverage/
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Prepare release assets
-        run: |
-          cp zig-out/bin/sway-focus sway-focus-linux-amd64
-          sha256sum sway-focus-linux-amd64 > sway-focus-linux-amd64.sha256
+      - name: Build release
+        run: zig build release
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
-            sway-focus-linux-amd64 \
-            sway-focus-linux-amd64.sha256
+            zig-out/bin/sway-focus-linux-amd64 \
+            zig-out/bin/sway-focus-linux-amd64.sha256
