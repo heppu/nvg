@@ -1,5 +1,5 @@
 /// sway-focus — Generic directional focus navigation between sway/i3
-/// windows and focus-aware applications (nvim, tmux, ghostty, vscode).
+/// windows and focus-aware applications (nvim, tmux, vscode).
 ///
 /// Usage: sway-focus <left|right|up|down> [options]
 const std = @import("std");
@@ -146,7 +146,7 @@ fn printUsage() void {
         \\Options:
         \\  -t, --timeout <ms>      IPC timeout in milliseconds (default: 100)
         \\  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
-        \\                           Available: nvim, tmux, ghostty, vscode
+        \\                           Available: nvim, tmux, vscode
         \\  -v, --version            Print version
         \\  -h, --help               Print this help
         \\
@@ -288,6 +288,5 @@ test {
     _ = @import("log.zig");
     _ = @import("hooks/nvim.zig");
     _ = @import("hooks/tmux.zig");
-    _ = @import("hooks/ghostty.zig");
     _ = @import("hooks/vscode.zig");
 }

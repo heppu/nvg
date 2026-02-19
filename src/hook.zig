@@ -65,7 +65,6 @@ pub const DetectedList = struct {
 pub const all_hooks = [_]*const Hook{
     &@import("hooks/nvim.zig").hook,
     &@import("hooks/tmux.zig").hook,
-    &@import("hooks/ghostty.zig").hook,
     &@import("hooks/vscode.zig").hook,
 };
 
