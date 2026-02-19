@@ -37,14 +37,14 @@ fn canMove(pid: i32, dir: Direction, _: u32) ?bool {
     var socket_buf: [256]u8 = undefined;
     const socket_path = tmuxSocketPath(&socket_buf, pid) orelse return null;
 
-    var session_buf: [256]u8 = undefined;
-    const session = getSession(socket_path, pid, &session_buf) orelse return null;
+    var target_buf: [256]u8 = undefined;
+    const target = getClientTarget(socket_path, pid, &target_buf) orelse return null;
 
-    // Query pane edge status:
-    // display-message -t <session> -p '#{pane_at_left}#{pane_at_right}#{pane_at_top}#{pane_at_bottom}'
+    // Query pane edge status using the client's active pane ID.
+    // display-message -t <pane_id> -p '#{pane_at_left}#{pane_at_right}#{pane_at_top}#{pane_at_bottom}'
     // Returns 4 chars like "0100" (at_left=0, at_right=1, at_top=0, at_bottom=0)
     const fmt = "#{pane_at_left}#{pane_at_right}#{pane_at_top}#{pane_at_bottom}";
-    const argv = [_][]const u8{ "tmux", "-S", socket_path, "display-message", "-t", session, "-p", fmt };
+    const argv = [_][]const u8{ "tmux", "-S", socket_path, "display-message", "-t", target.pane_id, "-p", fmt };
 
     var out_buf: [64]u8 = undefined;
     const output = runTmux(&argv, &out_buf) orelse return null;
@@ -67,11 +67,11 @@ fn moveFocus(pid: i32, dir: Direction, _: u32) void {
     var socket_buf: [256]u8 = undefined;
     const socket_path = tmuxSocketPath(&socket_buf, pid) orelse return;
 
-    var session_buf: [256]u8 = undefined;
-    const session = getSession(socket_path, pid, &session_buf) orelse return;
+    var target_buf: [256]u8 = undefined;
+    const target = getClientTarget(socket_path, pid, &target_buf) orelse return;
 
     const dir_flag = directionFlag(dir);
-    const argv = [_][]const u8{ "tmux", "-S", socket_path, "select-pane", "-t", session, dir_flag };
+    const argv = [_][]const u8{ "tmux", "-S", socket_path, "select-pane", "-t", target.pane_id, dir_flag };
 
     var out_buf: [64]u8 = undefined;
     _ = runTmux(&argv, &out_buf);
@@ -84,8 +84,8 @@ fn moveToEdge(pid: i32, dir: Direction, _: u32) void {
     var socket_buf: [256]u8 = undefined;
     const socket_path = tmuxSocketPath(&socket_buf, pid) orelse return;
 
-    var session_buf: [256]u8 = undefined;
-    const session = getSession(socket_path, pid, &session_buf) orelse return;
+    var target_buf: [256]u8 = undefined;
+    const target = getClientTarget(socket_path, pid, &target_buf) orelse return;
 
     // Build filter: '#{pane_at_left}' etc.
     const edge_var = switch (dir) {
@@ -95,8 +95,8 @@ fn moveToEdge(pid: i32, dir: Direction, _: u32) void {
         .down => "#{pane_at_bottom}",
     };
 
-    // list-panes -t <session> -f '<edge_var>' -F '#{pane_id}'
-    const list_argv = [_][]const u8{ "tmux", "-S", socket_path, "list-panes", "-t", session, "-f", edge_var, "-F", "#{pane_id}" };
+    // list-panes -t <session:window> -f '<edge_var>' -F '#{pane_id}'
+    const list_argv = [_][]const u8{ "tmux", "-S", socket_path, "list-panes", "-t", target.session_window, "-f", edge_var, "-F", "#{pane_id}" };
 
     var list_buf: [512]u8 = undefined;
     const list_output = runTmux(&list_argv, &list_buf) orelse return;
@@ -134,29 +134,56 @@ fn firstLine(output: []const u8) []const u8 {
     return output;
 }
 
-/// Get the session name for a tmux client PID.
-/// Runs: tmux -S <socket> list-clients -f '#{==:#{client_pid},<PID>}' -F '#{session_name}'
-fn getSession(socket_path: []const u8, client_pid: i32, session_buf: []u8) ?[]const u8 {
+/// Result of resolving a tmux client's active target.
+const ClientTarget = struct {
+    /// Pane ID (e.g. "%3") — used as -t target for display-message and select-pane.
+    pane_id: []const u8,
+    /// Session and window (e.g. "0:1") — used as -t target for list-panes.
+    session_window: []const u8,
+};
+
+/// Get the active pane ID and session:window for a tmux client PID.
+/// Runs: tmux -S <socket> list-clients -f '#{==:#{client_pid},<PID>}' -F '#{pane_id}|#{session_name}:#{window_index}'
+fn getClientTarget(socket_path: []const u8, client_pid: i32, target_buf: []u8) ?ClientTarget {
     var filter_buf: [64]u8 = undefined;
     const filter = std.fmt.bufPrint(&filter_buf, "#{{==:#{{client_pid}},{d}}}", .{client_pid}) catch return null;
 
-    const argv = [_][]const u8{ "tmux", "-S", socket_path, "list-clients", "-f", filter, "-F", "#{session_name}" };
+    const argv = [_][]const u8{ "tmux", "-S", socket_path, "list-clients", "-f", filter, "-F", "#{pane_id}|#{session_name}:#{window_index}" };
 
     var out_buf: [256]u8 = undefined;
     const output = runTmux(&argv, &out_buf) orelse return null;
 
-    const session = firstLine(output);
-    if (session.len == 0) {
-        log.log("tmux: no session found for client PID {d}", .{client_pid});
+    const line = firstLine(output);
+    const result = parseClientTarget(line, target_buf) orelse {
+        log.log("tmux: no target found for client PID {d}", .{client_pid});
         return null;
-    }
+    };
+    log.log("tmux: client PID {d} -> pane={s} session:window={s}", .{ client_pid, result.pane_id, result.session_window });
+    return result;
+}
 
-    log.log("tmux: client PID {d} -> session '{s}'", .{ client_pid, session });
+/// Parse "pane_id|session_name:window_index" (e.g. "%3|myses:1") into a ClientTarget.
+/// Copies the data into target_buf so it outlives the source.
+fn parseClientTarget(line: []const u8, target_buf: []u8) ?ClientTarget {
+    if (line.len == 0) return null;
 
-    // Copy into caller's buffer so it outlives our stack
-    if (session.len >= session_buf.len) return null;
-    @memcpy(session_buf[0..session.len], session);
-    return session_buf[0..session.len];
+    const sep = std.mem.indexOfScalar(u8, line, '|') orelse return null;
+    const pane_id_src = line[0..sep];
+    const session_window_src = line[sep + 1 ..];
+
+    if (pane_id_src.len == 0 or session_window_src.len == 0) return null;
+
+    const total = pane_id_src.len + session_window_src.len;
+    if (total > target_buf.len) return null;
+
+    // Copy pane_id then session_window contiguously into target_buf.
+    @memcpy(target_buf[0..pane_id_src.len], pane_id_src);
+    @memcpy(target_buf[pane_id_src.len .. pane_id_src.len + session_window_src.len], session_window_src);
+
+    return .{
+        .pane_id = target_buf[0..pane_id_src.len],
+        .session_window = target_buf[pane_id_src.len .. pane_id_src.len + session_window_src.len],
+    };
 }
 
 /// Discover the tmux socket path from the client process's cmdline.
@@ -366,4 +393,38 @@ test "getProcessUid returns null for nonexistent pid" {
     // PID 0 is the kernel scheduler, its /proc/0/status doesn't exist
     // Use a very high PID that almost certainly doesn't exist
     try std.testing.expectEqual(@as(?u32, null), getProcessUid(4194304));
+}
+
+test "parseClientTarget parses pane_id and session:window" {
+    var buf: [64]u8 = undefined;
+    const target = parseClientTarget("%3|myses:1", &buf).?;
+    try std.testing.expectEqualStrings("%3", target.pane_id);
+    try std.testing.expectEqualStrings("myses:1", target.session_window);
+}
+
+test "parseClientTarget handles numeric session name" {
+    var buf: [64]u8 = undefined;
+    const target = parseClientTarget("%0|0:0", &buf).?;
+    try std.testing.expectEqualStrings("%0", target.pane_id);
+    try std.testing.expectEqualStrings("0:0", target.session_window);
+}
+
+test "parseClientTarget returns null for empty input" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?ClientTarget, null), parseClientTarget("", &buf));
+}
+
+test "parseClientTarget returns null for missing separator" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?ClientTarget, null), parseClientTarget("%3", &buf));
+}
+
+test "parseClientTarget returns null for empty pane_id" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?ClientTarget, null), parseClientTarget("|0:1", &buf));
+}
+
+test "parseClientTarget returns null for empty session_window" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?ClientTarget, null), parseClientTarget("%3|", &buf));
 }
