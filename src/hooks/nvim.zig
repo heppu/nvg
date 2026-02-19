@@ -200,8 +200,64 @@ test "detect rejects nvim without --embed" {
     try std.testing.expectEqual(@as(?i32, null), detect(42, "nvim", "", "--headless"));
 }
 
-test "nvimSocketPath format" {
+test "nvimSocketPath returns path with pid" {
     var buf: [256]u8 = undefined;
-    const result = std.fmt.bufPrint(&buf, "{s}/nvim.{d}.0", .{ "/run/user/1000", @as(i32, 12345) }) catch unreachable;
-    try std.testing.expectEqualStrings("/run/user/1000/nvim.12345.0", result);
+    const path = nvimSocketPath(&buf, 12345).?;
+
+    // Path must end with /nvim.12345.0 regardless of which env var prefix is used
+    try std.testing.expect(std.mem.endsWith(u8, path, "/nvim.12345.0"));
+
+    // Verify the prefix matches the environment
+    if (posix.getenv("XDG_RUNTIME_DIR")) |xdg_dir| {
+        try std.testing.expect(std.mem.startsWith(u8, path, xdg_dir));
+    } else {
+        // Fallback path should contain /nvim.<user>/ before the socket name
+        const user = posix.getenv("USER") orelse "unknown";
+        var expected_buf: [128]u8 = undefined;
+        const suffix = std.fmt.bufPrint(&expected_buf, "/nvim.{s}/nvim.12345.0", .{user}) catch unreachable;
+        try std.testing.expect(std.mem.endsWith(u8, path, suffix));
+    }
+}
+
+test "nvimSocketPath returns null for buffer too small" {
+    var tiny_buf: [4]u8 = undefined;
+    try std.testing.expectEqual(@as(?[]const u8, null), nvimSocketPath(&tiny_buf, 12345));
+}
+
+test "readResponse reads complete response from pipe" {
+    const fds = try posix.pipe();
+    defer posix.close(fds[0]);
+
+    // Write a valid msgpack-RPC response: [1, 0, nil, 3]
+    const response = [_]u8{ 0x94, 0x01, 0x00, 0xc0, 0x03 };
+    _ = try posix.write(fds[1], &response);
+    posix.close(fds[1]);
+
+    var buf: [2048]u8 = undefined;
+    const result = readResponse(fds[0], &buf).?;
+    try std.testing.expectEqualSlices(u8, &response, result);
+}
+
+test "readResponse returns null on closed pipe" {
+    const fds = try posix.pipe();
+    posix.close(fds[1]); // close write end immediately
+    defer posix.close(fds[0]);
+
+    var buf: [2048]u8 = undefined;
+    try std.testing.expectEqual(@as(?[]const u8, null), readResponse(fds[0], &buf));
+}
+
+test "readResponse returns data for non-truncation error" {
+    const fds = try posix.pipe();
+    defer posix.close(fds[0]);
+
+    // Write a response with wrong msgid — decodeResponse will return UnexpectedMsgId
+    // which is not a truncation error, so readResponse should still return the data
+    const response = [_]u8{ 0x94, 0x01, 0x05, 0xc0, 0x03 };
+    _ = try posix.write(fds[1], &response);
+    posix.close(fds[1]);
+
+    var buf: [2048]u8 = undefined;
+    const result = readResponse(fds[0], &buf).?;
+    try std.testing.expectEqualSlices(u8, &response, result);
 }

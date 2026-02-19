@@ -337,3 +337,33 @@ test "CmdlineIterator handles -L flag" {
     try std.testing.expectEqualStrings("attach", it.next().?);
     try std.testing.expectEqual(@as(?[]const u8, null), it.next());
 }
+
+test "CmdlineIterator skips empty entries" {
+    const data = "a\x00\x00b\x00";
+    var it = CmdlineIterator{ .data = data };
+    try std.testing.expectEqualStrings("a", it.next().?);
+    try std.testing.expectEqualStrings("b", it.next().?);
+    try std.testing.expectEqual(@as(?[]const u8, null), it.next());
+}
+
+test "CmdlineIterator handles data without trailing null" {
+    const data = "tmux\x00attach";
+    var it = CmdlineIterator{ .data = data };
+    try std.testing.expectEqualStrings("tmux", it.next().?);
+    try std.testing.expectEqualStrings("attach", it.next().?);
+    try std.testing.expectEqual(@as(?[]const u8, null), it.next());
+}
+
+test "getProcessUid reads current process UID" {
+    const pid: i32 = @intCast(std.os.linux.getpid());
+    const uid = getProcessUid(pid);
+    // Should succeed and match the real UID
+    try std.testing.expect(uid != null);
+    try std.testing.expectEqual(std.os.linux.getuid(), uid.?);
+}
+
+test "getProcessUid returns null for nonexistent pid" {
+    // PID 0 is the kernel scheduler, its /proc/0/status doesn't exist
+    // Use a very high PID that almost certainly doesn't exist
+    try std.testing.expectEqual(@as(?u32, null), getProcessUid(4194304));
+}

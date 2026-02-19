@@ -116,3 +116,15 @@ test "nullTermStr" {
 test "nullTermStr no null" {
     try std.testing.expectEqualStrings("hello", nullTermStr("hello"));
 }
+
+test "readFileToBuffer reads /proc/self/cmdline" {
+    var buf: [4096]u8 = undefined;
+    const content = readFileToBuffer("/proc/self/cmdline", &buf);
+    try std.testing.expect(content != null);
+    try std.testing.expect(content.?.len > 0);
+}
+
+test "readFileToBuffer returns null for nonexistent path" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqual(@as(?[]const u8, null), readFileToBuffer("/nonexistent/path/file", &buf));
+}

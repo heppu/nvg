@@ -51,3 +51,38 @@ test "makeUnixAddr rejects too-long path" {
     const long_path = "a" ** 200;
     try std.testing.expectError(error.SocketPathTooLong, makeUnixAddr(long_path));
 }
+
+test "writeAll and readExact round-trip through pipe" {
+    const fds = try posix.pipe();
+    defer posix.close(fds[0]);
+    defer posix.close(fds[1]);
+
+    const message = "hello, net!";
+    try writeAll(fds[1], message);
+
+    var buf: [message.len]u8 = undefined;
+    try readExact(fds[0], &buf);
+    try std.testing.expectEqualStrings(message, &buf);
+}
+
+test "readExact returns error on closed pipe" {
+    const fds = try posix.pipe();
+    posix.close(fds[1]); // close write end
+    defer posix.close(fds[0]);
+
+    var buf: [4]u8 = undefined;
+    try std.testing.expectError(error.ReadFailed, readExact(fds[0], &buf));
+}
+
+test "setTimeouts with zero is no-op" {
+    const fd = try posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0);
+    defer posix.close(fd);
+    // timeout_ms = 0 should return immediately without setting options
+    try setTimeouts(fd, 0);
+}
+
+test "setTimeouts sets timeout on valid socket" {
+    const fd = try posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0);
+    defer posix.close(fd);
+    try setTimeouts(fd, 500);
+}

@@ -170,3 +170,109 @@ fn findFocusedPidInTree(node: std.json.Value) ?i32 {
 
     return null;
 }
+
+// ─── Tests ───
+
+const testing = std.testing;
+
+/// Helper to create a json object with focused/pid/nodes/floating_nodes fields.
+fn makeNode(
+    alloc: std.mem.Allocator,
+    focused: bool,
+    pid: ?i64,
+    nodes: ?[]const std.json.Value,
+    floating_nodes: ?[]const std.json.Value,
+) !std.json.Value {
+    var obj = std.json.ObjectMap.init(alloc);
+    try obj.put("focused", .{ .bool = focused });
+    if (pid) |p| {
+        try obj.put("pid", .{ .integer = p });
+    }
+    if (nodes) |n| {
+        var arr = std.json.Array.init(alloc);
+        for (n) |child| try arr.append(child);
+        try obj.put("nodes", .{ .array = arr });
+    }
+    if (floating_nodes) |n| {
+        var arr = std.json.Array.init(alloc);
+        for (n) |child| try arr.append(child);
+        try obj.put("floating_nodes", .{ .array = arr });
+    }
+    return .{ .object = obj };
+}
+
+test "findFocusedPidInTree returns pid for focused leaf" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const node = try makeNode(alloc, true, 42, null, null);
+    try testing.expectEqual(@as(?i32, 42), findFocusedPidInTree(node));
+}
+
+test "findFocusedPidInTree returns null for unfocused leaf" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const node = try makeNode(alloc, false, 42, null, null);
+    try testing.expectEqual(@as(?i32, null), findFocusedPidInTree(node));
+}
+
+test "findFocusedPidInTree returns null for focused node without pid" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const node = try makeNode(alloc, true, null, null, null);
+    try testing.expectEqual(@as(?i32, null), findFocusedPidInTree(node));
+}
+
+test "findFocusedPidInTree recurses into nodes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const child = try makeNode(alloc, true, 99, null, null);
+    const unfocused_child = try makeNode(alloc, false, 10, null, null);
+    const root = try makeNode(alloc, false, 1, &.{ unfocused_child, child }, null);
+    try testing.expectEqual(@as(?i32, 99), findFocusedPidInTree(root));
+}
+
+test "findFocusedPidInTree recurses into floating_nodes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const floating_child = try makeNode(alloc, true, 77, null, null);
+    const root = try makeNode(alloc, false, 1, null, &.{floating_child});
+    try testing.expectEqual(@as(?i32, 77), findFocusedPidInTree(root));
+}
+
+test "findFocusedPidInTree returns null when no node focused" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const child1 = try makeNode(alloc, false, 10, null, null);
+    const child2 = try makeNode(alloc, false, 20, null, null);
+    const root = try makeNode(alloc, false, 1, &.{ child1, child2 }, null);
+    try testing.expectEqual(@as(?i32, null), findFocusedPidInTree(root));
+}
+
+test "findFocusedPidInTree returns null for non-object input" {
+    try testing.expectEqual(@as(?i32, null), findFocusedPidInTree(.null));
+    try testing.expectEqual(@as(?i32, null), findFocusedPidInTree(.{ .integer = 42 }));
+    try testing.expectEqual(@as(?i32, null), findFocusedPidInTree(.{ .bool = true }));
+}
+
+test "findFocusedPidInTree finds deeply nested focused node" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const deep = try makeNode(alloc, true, 555, null, null);
+    const mid = try makeNode(alloc, false, 2, &.{deep}, null);
+    const root = try makeNode(alloc, false, 1, &.{mid}, null);
+    try testing.expectEqual(@as(?i32, 555), findFocusedPidInTree(root));
+}

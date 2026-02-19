@@ -96,15 +96,57 @@ test "findHookByName returns nvim hook" {
     try std.testing.expectEqualStrings("nvim", h.?.name);
 }
 
+test "findHookByName returns tmux hook" {
+    const h = findHookByName("tmux");
+    try std.testing.expect(h != null);
+    try std.testing.expectEqualStrings("tmux", h.?.name);
+}
+
+test "findHookByName returns vscode hook" {
+    const h = findHookByName("vscode");
+    try std.testing.expect(h != null);
+    try std.testing.expectEqualStrings("vscode", h.?.name);
+}
+
 test "findHookByName returns null for unknown" {
     try std.testing.expectEqual(@as(?*const Hook, null), findHookByName("nonexistent"));
 }
 
 test "DetectedList append and len" {
     const nvim_hook = &@import("hooks/nvim.zig").hook;
+    const tmux_hook = &@import("hooks/tmux.zig").hook;
     var list = DetectedList{};
     try std.testing.expectEqual(@as(usize, 0), list.len);
+
     list.append(.{ .hook = nvim_hook, .pid = 123, .depth = 1 });
     try std.testing.expectEqual(@as(usize, 1), list.len);
     try std.testing.expectEqual(@as(i32, 123), list.items[0].pid);
+
+    list.append(.{ .hook = tmux_hook, .pid = 456, .depth = 2 });
+    try std.testing.expectEqual(@as(usize, 2), list.len);
+    try std.testing.expectEqual(@as(i32, 456), list.items[1].pid);
+
+    // Verify slice returns correct view
+    const s = list.slice();
+    try std.testing.expectEqual(@as(usize, 2), s.len);
+    try std.testing.expectEqualStrings("nvim", s[0].hook.name);
+    try std.testing.expectEqualStrings("tmux", s[1].hook.name);
+}
+
+test "DetectedList overflow is silently dropped" {
+    const nvim_hook = &@import("hooks/nvim.zig").hook;
+    var list = DetectedList{};
+
+    // Fill to max_detected
+    for (0..max_detected) |i| {
+        list.append(.{ .hook = nvim_hook, .pid = @intCast(i), .depth = 0 });
+    }
+    try std.testing.expectEqual(max_detected, list.len);
+
+    // One more should be silently dropped
+    list.append(.{ .hook = nvim_hook, .pid = 999, .depth = 0 });
+    try std.testing.expectEqual(max_detected, list.len);
+
+    // Last item should still be the max_detected-1 item, not 999
+    try std.testing.expectEqual(@as(i32, @intCast(max_detected - 1)), list.items[max_detected - 1].pid);
 }

@@ -281,6 +281,7 @@ test "Direction.fromString" {
 // verify by inspection, while individual components (msgpack, process tree
 // walking, hook detection) are unit-tested in isolation.
 test {
+    _ = @import("sway.zig");
     _ = @import("msgpack.zig");
     _ = @import("process.zig");
     _ = @import("hook.zig");

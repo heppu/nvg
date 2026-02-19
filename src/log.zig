@@ -28,3 +28,21 @@ test "log does not crash when disabled" {
     debug_enabled = false;
     log("test {s}", .{"message"});
 }
+
+test "isEnabled returns cached false" {
+    debug_enabled = false;
+    try std.testing.expect(!isEnabled());
+}
+
+test "isEnabled returns cached true" {
+    debug_enabled = true;
+    defer debug_enabled = false;
+    try std.testing.expect(isEnabled());
+}
+
+test "log does not crash when enabled" {
+    debug_enabled = true;
+    defer debug_enabled = false;
+    // This writes to stderr but should not crash
+    log("test {s} {d}", .{ "enabled", @as(u32, 42) });
+}
