@@ -1,6 +1,6 @@
 .{
     .name = .sway_focus,
-    .version = "0.0.1",
+    .version = "0.0.2",
     .fingerprint = 0x56bdcafa135214c9,
     .minimum_zig_version = "0.15.2",
     .paths = .{
