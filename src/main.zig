@@ -13,7 +13,7 @@ const log = @import("log.zig");
 const Hook = hook_mod.Hook;
 const Sway = sway_mod.Sway;
 
-const version = "0.0.1";
+const version = @import("config").version;
 
 pub const Direction = enum {
     left,

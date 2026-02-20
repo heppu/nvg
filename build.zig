@@ -1,8 +1,12 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const config = b.addOptions();
+    config.addOption([]const u8, "version", zon.version);
 
     const exe = b.addExecutable(.{
         .name = "sway-focus",
@@ -10,6 +14,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "config", .module = config.createModule() }},
         }),
     });
 
@@ -37,6 +42,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{ .name = "config", .module = config.createModule() }},
         }),
         .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
         .use_llvm = true,
@@ -81,6 +87,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = .ReleaseSafe,
+            .imports = &.{.{ .name = "config", .module = config.createModule() }},
         }),
     });
     const install_release = b.addInstallArtifact(release_exe, .{});
