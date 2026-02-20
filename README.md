@@ -1,26 +1,26 @@
-# sway-focus
+# nvg
 
-[![CI](https://github.com/heppu/sway-focus/actions/workflows/ci.yml/badge.svg)](https://github.com/heppu/sway-focus/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/heppu/sway-focus/branch/main/graph/badge.svg)](https://codecov.io/gh/heppu/sway-focus)
+[![CI](https://github.com/heppu/nvg/actions/workflows/ci.yml/badge.svg)](https://github.com/heppu/nvg/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/heppu/nvg/branch/main/graph/badge.svg)](https://codecov.io/gh/heppu/nvg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <https://github.com/user-attachments/assets/2442c40c-da36-4c5c-9ede-671fbcb4fc11>
 
 Seamless navigation between sway and applications without plugins.
 
-`sway-focus` can be used as a drop-in replacement for `focus` command in sway config. This allows using sway's keybindings to control movement also within supported applications.
+`nvg` can be used as a drop-in replacement for `focus` command in sway config. This allows using sway's keybindings to control movement also within supported applications.
 
 ## Installation
 
 ### Download binary
 
 Prebuilt Linux binaries for amd64, arm64, and armv7 are available from
-[GitHub Releases](https://github.com/heppu/sway-focus/releases):
+[GitHub Releases](https://github.com/heppu/nvg/releases):
 
 ```sh
-curl -Lo sway-focus https://github.com/heppu/sway-focus/releases/latest/download/sway-focus-linux-amd64
-chmod +x sway-focus
-sudo mv sway-focus /usr/local/bin/
+curl -Lo nvg https://github.com/heppu/nvg/releases/latest/download/nvg-linux-amd64
+chmod +x nvg
+sudo mv nvg /usr/local/bin/
 ```
 
 ### Build from source
@@ -28,30 +28,30 @@ sudo mv sway-focus /usr/local/bin/
 Requires [Zig](https://ziglang.org/download/). No other dependencies.
 
 ```sh
-git clone https://github.com/heppu/sway-focus.git
-cd sway-focus
+git clone https://github.com/heppu/nvg.git
+cd nvg
 sudo zig build install -Doptimize=ReleaseSafe --prefix /usr/local
 ```
 
 ## Setup
 
-In your `~/.config/sway/config` change all `focus` bindings to use `exec sway-focus`:
+In your `~/.config/sway/config` change all `focus` bindings to use `exec nvg`:
 
 ```
-bindsym $mod+h exec sway-focus left
-bindsym $mod+j exec sway-focus down
-bindsym $mod+k exec sway-focus up
-bindsym $mod+l exec sway-focus right
+bindsym $mod+h exec nvg left
+bindsym $mod+j exec nvg down
+bindsym $mod+k exec nvg up
+bindsym $mod+l exec nvg right
 ```
 
-That's it. sway-focus automatically detects Neovim, tmux, and VS Code in the
+That's it. nvg automatically detects Neovim, tmux, and VS Code in the
 focused window and navigates through their splits/panes before moving to the
 next sway window.
 
 To limit detection to specific applications use explicit hooks list:
 
 ```
-bindsym $mod+h exec sway-focus --hooks nvim,tmux left
+bindsym $mod+h exec nvg --hooks nvim,tmux left
 ```
 
 ## Supported Applications
@@ -94,7 +94,7 @@ bindsym $mod+h exec sway-focus --hooks nvim,tmux left
 
 | Variable | Description |
 |----------|-------------|
-| `SWAY_FOCUS_DEBUG` | Set to `1` to enable debug logging to stderr |
+| `NVG_DEBUG` | Set to `1` to enable debug logging to stderr |
 | `SWAYSOCK` | Path to sway IPC socket (set automatically by sway) |
 | `XDG_RUNTIME_DIR` | Used to locate Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |

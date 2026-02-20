@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     config.addOption([]const u8, "version", zon.version);
 
     const exe = b.addExecutable(.{
-        .name = "sway-focus",
+        .name = "nvg",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const run_step = b.step("run", "Run sway-focus");
+    const run_step = b.step("run", "Run nvg");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -81,11 +81,11 @@ pub fn build(b: *std.Build) void {
     // Release step: build ReleaseSafe binaries for all supported platforms and
     // generate SHA256 checksums.
     // Usage: zig build release
-    // Output: zig-out/bin/sway-focus-linux-{amd64,arm64,armv7} and matching .sha256 files
+    // Output: zig-out/bin/nvg-linux-{amd64,arm64,armv7} and matching .sha256 files
     const release_targets = [_]struct { name: []const u8, query: std.Target.Query }{
-        .{ .name = "sway-focus-linux-amd64", .query = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } },
-        .{ .name = "sway-focus-linux-arm64", .query = .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu } },
-        .{ .name = "sway-focus-linux-armv7", .query = .{ .cpu_arch = .arm, .os_tag = .linux, .abi = .gnueabihf } },
+        .{ .name = "nvg-linux-amd64", .query = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } },
+        .{ .name = "nvg-linux-arm64", .query = .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu } },
+        .{ .name = "nvg-linux-armv7", .query = .{ .cpu_arch = .arm, .os_tag = .linux, .abi = .gnueabihf } },
     };
     const release_step = b.step("release", "Build release binaries with checksums");
     for (release_targets) |rt| {

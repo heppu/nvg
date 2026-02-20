@@ -1,7 +1,7 @@
-/// sway-focus — Generic directional focus navigation between sway/i3
+/// nvg — Generic directional focus navigation between sway/i3
 /// windows and focus-aware applications (nvim, tmux, vscode).
 ///
-/// Usage: sway-focus <left|right|up|down> [options]
+/// Usage: nvg <left|right|up|down> [options]
 const std = @import("std");
 const posix = std.posix;
 
@@ -74,7 +74,7 @@ fn parseArgs() ?Args {
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-v")) {
             var buf: [64]u8 = undefined;
-            const msg = std.fmt.bufPrint(&buf, "sway-focus {s}\n", .{version}) catch "sway-focus\n";
+            const msg = std.fmt.bufPrint(&buf, "nvg {s}\n", .{version}) catch "nvg\n";
             std.fs.File.stdout().writeAll(msg) catch {};
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-t") or std.mem.eql(u8, arg, "--timeout")) {
@@ -139,7 +139,7 @@ fn parseArgs() ?Args {
 
 fn printUsage() void {
     std.fs.File.stderr().writeAll(
-        \\Usage: sway-focus <left|right|up|down> [options]
+        \\Usage: nvg <left|right|up|down> [options]
         \\
         \\Generic focus navigation between sway windows and applications.
         \\
@@ -151,7 +151,7 @@ fn printUsage() void {
         \\  -h, --help               Print this help
         \\
         \\Environment:
-        \\  SWAY_FOCUS_DEBUG=1       Enable debug logging to stderr
+        \\  NVG_DEBUG=1              Enable debug logging to stderr
         \\
     ) catch {};
 }
