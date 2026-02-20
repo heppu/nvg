@@ -1,4 +1,4 @@
-// Custom test runner for sway-focus.
+// Custom test runner for nvg.
 // Based on https://gist.github.com/karlseguin/c6bea5b35e4e8d26af6f81c22cb5d76b
 // with JUnit XML output support via --junit <path>.
 
@@ -189,7 +189,7 @@ fn writeJUnit(path: []const u8, results: []const Result) !void {
     try w.print(
         \\<?xml version="1.0" encoding="UTF-8"?>
         \\<testsuites>
-        \\  <testsuite name="sway-focus" tests="{d}" failures="{d}" skipped="{d}" time="{d:.3}">
+        \\  <testsuite name="nvg" tests="{d}" failures="{d}" skipped="{d}" time="{d:.3}">
         \\
     , .{ pass + fail + skip, fail, skip, @as(f64, @floatFromInt(total_ns)) / 1e9 });
 
@@ -197,15 +197,15 @@ fn writeJUnit(path: []const u8, results: []const Result) !void {
         const secs = @as(f64, @floatFromInt(r.duration_ns)) / 1e9;
         switch (r.status) {
             .pass => try w.print(
-                "    <testcase name=\"{s}\" classname=\"sway-focus\" time=\"{d:.6}\"/>\n",
+                "    <testcase name=\"{s}\" classname=\"nvg\" time=\"{d:.6}\"/>\n",
                 .{ r.name, secs },
             ),
             .fail => try w.print(
-                "    <testcase name=\"{s}\" classname=\"sway-focus\" time=\"{d:.6}\"><failure message=\"{s}\"/></testcase>\n",
+                "    <testcase name=\"{s}\" classname=\"nvg\" time=\"{d:.6}\"><failure message=\"{s}\"/></testcase>\n",
                 .{ r.name, secs, r.err_name orelse "unknown" },
             ),
             .skip => try w.print(
-                "    <testcase name=\"{s}\" classname=\"sway-focus\" time=\"{d:.6}\"><skipped/></testcase>\n",
+                "    <testcase name=\"{s}\" classname=\"nvg\" time=\"{d:.6}\"><skipped/></testcase>\n",
                 .{ r.name, secs },
             ),
             .text => {},

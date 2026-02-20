@@ -83,4 +83,4 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes \
-            zig-out/bin/sway-focus-linux-*
+            zig-out/bin/nvg-linux-*

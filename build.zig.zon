@@ -1,7 +1,7 @@
 .{
-    .name = .sway_focus,
-    .version = "0.0.2",
-    .fingerprint = 0x56bdcafa135214c9,
+    .name = .nvg,
+    .version = "0.0.1",
+    .fingerprint = 0x17bb15b3cf61ae83,
     .minimum_zig_version = "0.15.2",
     .paths = .{
         "build.zig",
