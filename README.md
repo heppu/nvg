@@ -4,18 +4,11 @@
 [![codecov](https://codecov.io/gh/heppu/sway-focus/branch/main/graph/badge.svg)](https://codecov.io/gh/heppu/sway-focus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Seamless navigation across sway, tmux, and neovim.
-
 <https://github.com/user-attachments/assets/2442c40c-da36-4c5c-9ede-671fbcb4fc11>
 
-## The Problem
+Seamless navigation between sway and applications without plugins.
 
-Sway's `focus` command jumps between windows but doesn't know about splits inside
-them. If you have Neovim splits inside a tmux pane, pressing your focus key skips
-right past them to the next sway window.
-
-sway-focus navigates innermost-first — through Neovim splits, then tmux panes,
-then sway windows — so one set of keybindings moves you everywhere.
+`sway-focus` can be used as a drop-in replacement for `focus` command in sway config. This allows using sway's keybindings to control movement also within supported applications.
 
 ## Installation
 
@@ -25,31 +18,24 @@ Prebuilt Linux binaries for amd64, arm64, and armv7 are available from
 [GitHub Releases](https://github.com/heppu/sway-focus/releases):
 
 ```sh
-# Replace ARCH with amd64, arm64, or armv7
-curl -Lo sway-focus https://github.com/heppu/sway-focus/releases/latest/download/sway-focus-linux-ARCH
+curl -Lo sway-focus https://github.com/heppu/sway-focus/releases/latest/download/sway-focus-linux-amd64
 chmod +x sway-focus
 sudo mv sway-focus /usr/local/bin/
 ```
 
 ### Build from source
 
-Requires [Zig](https://ziglang.org/download/) >= 0.15.2. No other dependencies.
+Requires [Zig](https://ziglang.org/download/). No other dependencies.
 
 ```sh
 git clone https://github.com/heppu/sway-focus.git
 cd sway-focus
-
-# Install to /usr/local
 sudo zig build install -Doptimize=ReleaseSafe --prefix /usr/local
-
-# Or build a standalone release binary
-zig build release
-# Output: zig-out/bin/sway-focus-linux-amd64
 ```
 
 ## Setup
 
-Add to your `~/.config/sway/config`:
+In your `~/.config/sway/config` change all `focus` bindings to use `exec sway-focus`:
 
 ```
 bindsym $mod+h exec sway-focus left
@@ -62,7 +48,7 @@ That's it. sway-focus automatically detects Neovim, tmux, and VS Code in the
 focused window and navigates through their splits/panes before moving to the
 next sway window.
 
-To limit detection to specific applications:
+To limit detection to specific applications use explicit hooks list:
 
 ```
 bindsym $mod+h exec sway-focus --hooks nvim,tmux left
