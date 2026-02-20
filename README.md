@@ -21,11 +21,12 @@ then sway windows — so one set of keybindings moves you everywhere.
 
 ### Download binary
 
-Prebuilt Linux amd64 binaries are available from
+Prebuilt Linux binaries for amd64, arm64, and armv7 are available from
 [GitHub Releases](https://github.com/heppu/sway-focus/releases):
 
 ```sh
-curl -Lo sway-focus https://github.com/heppu/sway-focus/releases/latest/download/sway-focus-linux-amd64
+# Replace ARCH with amd64, arm64, or armv7
+curl -Lo sway-focus https://github.com/heppu/sway-focus/releases/latest/download/sway-focus-linux-ARCH
 chmod +x sway-focus
 sudo mv sway-focus /usr/local/bin/
 ```

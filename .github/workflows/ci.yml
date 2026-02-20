@@ -83,5 +83,4 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes \
-            zig-out/bin/sway-focus-linux-amd64 \
-            zig-out/bin/sway-focus-linux-amd64.sha256
+            zig-out/bin/sway-focus-linux-*

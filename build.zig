@@ -78,23 +78,31 @@ pub fn build(b: *std.Build) void {
     const coverage_step = b.step("coverage", "Generate test coverage (requires kcov)");
     coverage_step.dependOn(&install_coverage.step);
 
-    // Release step: build a ReleaseSafe binary and generate a SHA256 checksum.
+    // Release step: build ReleaseSafe binaries for all supported platforms and
+    // generate SHA256 checksums.
     // Usage: zig build release
-    // Output: zig-out/bin/sway-focus-linux-amd64 and sway-focus-linux-amd64.sha256
-    const release_exe = b.addExecutable(.{
-        .name = "sway-focus-linux-amd64",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = .ReleaseSafe,
-            .imports = &.{.{ .name = "config", .module = config.createModule() }},
-        }),
-    });
-    const install_release = b.addInstallArtifact(release_exe, .{});
-    const checksum = ChecksumStep.create(b, release_exe);
-    checksum.step.dependOn(&install_release.step);
-    const release_step = b.step("release", "Build release binary with checksum");
-    release_step.dependOn(&checksum.step);
+    // Output: zig-out/bin/sway-focus-linux-{amd64,arm64,armv7} and matching .sha256 files
+    const release_targets = [_]struct { name: []const u8, query: std.Target.Query }{
+        .{ .name = "sway-focus-linux-amd64", .query = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } },
+        .{ .name = "sway-focus-linux-arm64", .query = .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu } },
+        .{ .name = "sway-focus-linux-armv7", .query = .{ .cpu_arch = .arm, .os_tag = .linux, .abi = .gnueabihf } },
+    };
+    const release_step = b.step("release", "Build release binaries with checksums");
+    for (release_targets) |rt| {
+        const release_exe = b.addExecutable(.{
+            .name = rt.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = b.resolveTargetQuery(rt.query),
+                .optimize = .ReleaseSafe,
+                .imports = &.{.{ .name = "config", .module = config.createModule() }},
+            }),
+        });
+        const install_release = b.addInstallArtifact(release_exe, .{});
+        const checksum = ChecksumStep.create(b, release_exe);
+        checksum.step.dependOn(&install_release.step);
+        release_step.dependOn(&checksum.step);
+    }
 }
 
 const ChecksumStep = struct {
