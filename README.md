@@ -4,57 +4,18 @@
 [![codecov](https://codecov.io/gh/heppu/sway-focus/branch/main/graph/badge.svg)](https://codecov.io/gh/heppu/sway-focus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Move seamlessly within sway and applications.
+Seamless navigation across sway, tmux, and neovim.
 
-## Why
+<https://github.com/user-attachments/assets/2442c40c-da36-4c5c-9ede-671fbcb4fc11>
 
-Sway's built-in `focus` command moves between windows, but it has no awareness of
-application-internal splits. If you have Neovim with vertical splits inside a tmux
-pane, pressing your sway focus key jumps straight to the next sway window -- skipping
-over the remaining Neovim splits or tmux panes in that direction.
+## The Problem
 
-sway-focus fixes this by trying the innermost application first and only bubbling up
-to the next layer when it reaches an edge.
+Sway's `focus` command jumps between windows but doesn't know about splits inside
+them. If you have Neovim splits inside a tmux pane, pressing your focus key skips
+right past them to the next sway window.
 
-## How it works
-
-1. Get the focused window PID from sway via IPC.
-2. Walk the process tree under that PID and detect supported applications.
-3. Try hooks **innermost-first** (e.g. nvim before tmux):
-   - **Can move?** Ask the application if it has more splits in the requested direction.
-   - **Yes** -- tell the application to move focus internally. Done.
-   - **No / error** -- at edge, bubble up to the next outer hook.
-4. If all hooks are at their edge (or none detected), move sway window focus.
-5. After crossing a sway window boundary, detect hooks in the newly focused window
-   and call `moveToEdge` with the **opposite** direction so the user enters from the
-   correct side.
-
-```
- sway window A                      sway window B
-+----------------------------+     +----------------------------+
-| tmux                       |     | tmux                       |
-| +---------++--------------+|     |+--------------++---------+ |
-| |  nvim   ||              ||     ||              ||  nvim   | |
-| | [split1]||   pane 2     || --> ||   pane 1     || [split1]| |
-| | *split2 ||              ||     ||              ||  split2 | |
-| +---------++--------------+|     |+--------------++---------+ |
-+----------------------------+     +----------------------------+
-
-  focus right from nvim split2:
-    1. nvim: at right edge -> bubble up
-    2. tmux: at right edge -> bubble up
-    3. sway: move focus to window B
-    4. tmux detected in B: moveToEdge(left)
-    5. nvim detected in B: moveToEdge(left) -> split1 focused
-```
-
-## Supported applications
-
-| Application | Status | Communication |
-|-------------|--------|---------------|
-| **Neovim**  | Full   | msgpack-RPC via Unix socket |
-| **tmux**    | Full   | tmux CLI |
-| **VS Code** | Detect only | Not yet implemented |
+sway-focus navigates innermost-first — through Neovim splits, then tmux panes,
+then sway windows — so one set of keybindings moves you everywhere.
 
 ## Installation
 
@@ -76,31 +37,18 @@ Requires [Zig](https://ziglang.org/download/) >= 0.15.2. No other dependencies.
 ```sh
 git clone https://github.com/heppu/sway-focus.git
 cd sway-focus
+
+# Install to /usr/local
+sudo zig build install -Doptimize=ReleaseSafe --prefix /usr/local
+
+# Or build a standalone release binary
 zig build release
-# Binary at zig-out/bin/sway-focus-linux-amd64
+# Output: zig-out/bin/sway-focus-linux-amd64
 ```
 
-## Usage
+## Setup
 
-```
-Usage: sway-focus <left|right|up|down> [options]
-
-Generic focus navigation between sway windows and applications.
-
-Options:
-  -t, --timeout <ms>      IPC timeout in milliseconds (default: 100)
-  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
-                           Available: nvim, tmux, vscode
-  -v, --version            Print version
-  -h, --help               Print this help
-
-Environment:
-  SWAY_FOCUS_DEBUG=1       Enable debug logging to stderr
-```
-
-### Sway configuration
-
-Replace your existing focus bindings in `~/.config/sway/config`:
+Add to your `~/.config/sway/config`:
 
 ```
 bindsym $mod+h exec sway-focus left
@@ -109,39 +57,70 @@ bindsym $mod+k exec sway-focus up
 bindsym $mod+l exec sway-focus right
 ```
 
-### Selective hooks
+That's it. sway-focus automatically detects Neovim, tmux, and VS Code in the
+focused window and navigates through their splits/panes before moving to the
+next sway window.
 
-If you only use Neovim (no tmux), you can skip tmux detection:
+To limit detection to specific applications:
 
 ```
-bindsym $mod+h exec sway-focus --hooks nvim left
+bindsym $mod+h exec sway-focus --hooks nvim,tmux left
+```
+
+## Supported Applications
+
+| Application | Status |
+|-------------|--------|
+| Neovim      | Full support |
+| tmux        | Full support |
+| VS Code     | Detection only (navigation not yet implemented) |
+
+## How It Works
+
+1. Get the focused window PID from sway.
+2. Walk the process tree and detect supported applications.
+3. Try the **innermost** application first (e.g. nvim before tmux):
+   - If it can move in the requested direction, move internally. Done.
+   - If at edge, bubble up to the next layer.
+4. If all layers are at their edge, move sway window focus.
+5. When entering a new window, jump to the split closest to where you came from.
+
+```
+ sway window A                      sway window B
++----------------------------+     +----------------------------+
+| tmux                       |     | tmux                       |
+| +---------++--------------+|     |+--------------++---------+ |
+| |  nvim   ||              ||     ||              ||  nvim   | |
+| | [split1]||   pane 2     || --> ||   pane 1     || [split1]| |
+| | *split2 ||              ||     ||              ||  split2 | |
+| +---------++--------------+|     |+--------------++---------+ |
++----------------------------+     +----------------------------+
+
+  focus right from nvim split2:
+    1. nvim: at right edge -> bubble up
+    2. tmux: at right edge -> bubble up
+    3. sway: move focus to window B
+    4. enter window B -> land at leftmost tmux pane -> leftmost nvim split
 ```
 
 ## Configuration
 
 | Variable | Description |
 |----------|-------------|
-| `SWAYSOCK` | Path to sway IPC socket (set automatically by sway) |
 | `SWAY_FOCUS_DEBUG` | Set to `1` to enable debug logging to stderr |
+| `SWAYSOCK` | Path to sway IPC socket (set automatically by sway) |
 | `XDG_RUNTIME_DIR` | Used to locate Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
 
 ## Development
 
 ```sh
-# Run tests
-zig build test
-
-# Run tests with coverage (requires kcov)
-zig build coverage -- --junit zig-out/test-results.xml
-
-# Check formatting
-zig fmt --check src/ build.zig test_runner.zig
-
-# Debug build and run
-zig build run -- left
+zig build test                                     # Run tests
+zig build coverage -- --junit zig-out/junit.xml    # Coverage (requires kcov)
+zig fmt --check src/ build.zig test_runner.zig     # Check formatting
+zig build run -- left                              # Debug build and run
 ```
 
-## License
+## Inspiration
 
-[MIT](LICENSE)
+[https://github.com/cjab/nvim-sway](https://github.com/cjab/nvim-sway)
