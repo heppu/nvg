@@ -9,6 +9,7 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -77,10 +78,11 @@ jobs:
   e2e:
     needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        wm: [sway, i3, niri, dwm]
+        wm: [sway, i3, niri, dwm, river]
     steps:
       - uses: actions/checkout@v6
 
@@ -115,6 +117,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
 

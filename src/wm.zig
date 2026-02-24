@@ -13,6 +13,7 @@ const Direction = @import("main.zig").Direction;
 const Sway = @import("sway.zig").Sway;
 const Hyprland = @import("hyprland.zig").Hyprland;
 const Niri = @import("niri.zig").Niri;
+const River = @import("river.zig").River;
 const Dwm = @import("dwm.zig").Dwm;
 const log = @import("log.zig");
 
@@ -32,6 +33,7 @@ pub const Backend = enum {
     sway,
     hyprland,
     niri,
+    river,
     dwm,
     // Future backends:
     // awesome,
@@ -41,6 +43,7 @@ pub const Backend = enum {
         if (std.mem.eql(u8, s, "i3")) return .sway; // i3 uses the same protocol
         if (std.mem.eql(u8, s, "hyprland")) return .hyprland;
         if (std.mem.eql(u8, s, "niri")) return .niri;
+        if (std.mem.eql(u8, s, "river")) return .river;
         if (std.mem.eql(u8, s, "dwm")) return .dwm;
         // if (std.mem.eql(u8, s, "awesome")) return .awesome;
         return null;
@@ -82,6 +85,7 @@ pub const Connection = union(Backend) {
     sway: Sway,
     hyprland: Hyprland,
     niri: Niri,
+    river: River,
     dwm: Dwm,
     // Future backends:
     // awesome: Awesome,
@@ -124,6 +128,14 @@ pub fn detectBackend() ?Backend {
         return .niri;
     }
 
+    // Check River (XDG_CURRENT_DESKTOP=river is set by river)
+    if (posix.getenv("XDG_CURRENT_DESKTOP")) |desktop| {
+        if (std.mem.eql(u8, desktop, "river")) {
+            log.log("auto-detected river (XDG_CURRENT_DESKTOP=river)", .{});
+            return .river;
+        }
+    }
+
     // Check dwm (DWM_FIFO is set by the user for dwmfifo patch)
     if (posix.getenv("DWM_FIFO")) |_| {
         log.log("auto-detected dwm (DWM_FIFO set)", .{});
@@ -161,6 +173,10 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
             const niri = Niri.connect() catch return Error.ConnectFailed;
             return .{ .niri = niri };
         },
+        .river => {
+            const river = River.connect() catch return Error.ConnectFailed;
+            return .{ .river = river };
+        },
         .dwm => {
             const dwm_conn = Dwm.connect() catch return Error.ConnectFailed;
             return .{ .dwm = dwm_conn };
@@ -172,7 +188,7 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
 
 /// Return the list of supported backend names for help/error messages.
 pub fn backendNames() []const []const u8 {
-    return &.{ "sway", "i3", "hyprland", "niri", "dwm" };
+    return &.{ "sway", "i3", "hyprland", "niri", "river", "dwm" };
 }
 
 // ─── Tests ───
@@ -184,6 +200,7 @@ test "Backend.fromString valid names" {
     try testing.expectEqual(Backend.sway, Backend.fromString("i3").?);
     try testing.expectEqual(Backend.hyprland, Backend.fromString("hyprland").?);
     try testing.expectEqual(Backend.niri, Backend.fromString("niri").?);
+    try testing.expectEqual(Backend.river, Backend.fromString("river").?);
     try testing.expectEqual(Backend.dwm, Backend.fromString("dwm").?);
 }
 
@@ -199,5 +216,6 @@ test "backendNames returns non-empty list" {
     try testing.expectEqualStrings("i3", names[1]);
     try testing.expectEqualStrings("hyprland", names[2]);
     try testing.expectEqualStrings("niri", names[3]);
-    try testing.expectEqualStrings("dwm", names[4]);
+    try testing.expectEqualStrings("river", names[4]);
+    try testing.expectEqualStrings("dwm", names[5]);
 }
