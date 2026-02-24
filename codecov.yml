@@ -24,6 +24,7 @@ flag_management:
     - name: i3
     - name: hyprland
     - name: niri
+    - name: dwm
 
 ignore:
   - "build.zig"

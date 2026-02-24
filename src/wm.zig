@@ -13,6 +13,7 @@ const Direction = @import("main.zig").Direction;
 const Sway = @import("sway.zig").Sway;
 const Hyprland = @import("hyprland.zig").Hyprland;
 const Niri = @import("niri.zig").Niri;
+const Dwm = @import("dwm.zig").Dwm;
 const log = @import("log.zig");
 
 pub const Error = error{
@@ -31,8 +32,8 @@ pub const Backend = enum {
     sway,
     hyprland,
     niri,
+    dwm,
     // Future backends:
-    // dwm,
     // awesome,
 
     pub fn fromString(s: []const u8) ?Backend {
@@ -40,7 +41,7 @@ pub const Backend = enum {
         if (std.mem.eql(u8, s, "i3")) return .sway; // i3 uses the same protocol
         if (std.mem.eql(u8, s, "hyprland")) return .hyprland;
         if (std.mem.eql(u8, s, "niri")) return .niri;
-        // if (std.mem.eql(u8, s, "dwm")) return .dwm;
+        if (std.mem.eql(u8, s, "dwm")) return .dwm;
         // if (std.mem.eql(u8, s, "awesome")) return .awesome;
         return null;
     }
@@ -81,8 +82,9 @@ pub const Connection = union(Backend) {
     sway: Sway,
     hyprland: Hyprland,
     niri: Niri,
+    dwm: Dwm,
     // Future backends:
-    // dwm: Dwm,
+    // awesome: Awesome,
 
     pub fn wm(self: *Connection) *WindowManager {
         return switch (self.*) {
@@ -122,6 +124,12 @@ pub fn detectBackend() ?Backend {
         return .niri;
     }
 
+    // Check dwm (DWM_FIFO is set by the user for dwmfifo patch)
+    if (posix.getenv("DWM_FIFO")) |_| {
+        log.log("auto-detected dwm (DWM_FIFO set)", .{});
+        return .dwm;
+    }
+
     // Future: check other WM env vars
     // if (posix.getenv("...")) |_| { ... }
 
@@ -153,14 +161,18 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
             const niri = Niri.connect() catch return Error.ConnectFailed;
             return .{ .niri = niri };
         },
+        .dwm => {
+            const dwm_conn = Dwm.connect() catch return Error.ConnectFailed;
+            return .{ .dwm = dwm_conn };
+        },
         // Future backends would be handled here:
-        // .dwm => { ... },
+        // .awesome => { ... },
     }
 }
 
 /// Return the list of supported backend names for help/error messages.
 pub fn backendNames() []const []const u8 {
-    return &.{ "sway", "i3", "hyprland", "niri" };
+    return &.{ "sway", "i3", "hyprland", "niri", "dwm" };
 }
 
 // ─── Tests ───
@@ -172,6 +184,7 @@ test "Backend.fromString valid names" {
     try testing.expectEqual(Backend.sway, Backend.fromString("i3").?);
     try testing.expectEqual(Backend.hyprland, Backend.fromString("hyprland").?);
     try testing.expectEqual(Backend.niri, Backend.fromString("niri").?);
+    try testing.expectEqual(Backend.dwm, Backend.fromString("dwm").?);
 }
 
 test "Backend.fromString unknown returns null" {
@@ -186,4 +199,5 @@ test "backendNames returns non-empty list" {
     try testing.expectEqualStrings("i3", names[1]);
     try testing.expectEqualStrings("hyprland", names[2]);
     try testing.expectEqualStrings("niri", names[3]);
+    try testing.expectEqualStrings("dwm", names[4]);
 }

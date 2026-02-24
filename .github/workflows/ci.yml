@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        wm: [sway, i3, niri]
+        wm: [sway, i3, niri, dwm]
     steps:
       - uses: actions/checkout@v6
 
