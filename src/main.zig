@@ -165,7 +165,7 @@ fn printUsage() void {
         \\  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
         \\                           Available: nvim, tmux, vscode
         \\  --wm <name>             Window manager backend (default: auto-detect)
-        \\                           Available: sway, i3, hyprland
+        \\                           Available: sway, i3, hyprland, niri
         \\  -v, --version            Print version
         \\  -h, --help               Print this help
         \\
@@ -174,6 +174,7 @@ fn printUsage() void {
         \\  SWAYSOCK                 Sway IPC socket path (set automatically by sway)
         \\  I3SOCK                   i3 IPC socket path (set automatically by i3)
         \\  HYPRLAND_INSTANCE_SIGNATURE  Hyprland instance ID (set automatically by Hyprland)
+        \\  NIRI_SOCKET              Niri IPC socket path (set automatically by niri)
         \\  XDG_RUNTIME_DIR          Used to locate Hyprland and Neovim sockets
         \\
     ) catch {};
@@ -240,6 +241,7 @@ test {
     _ = @import("wm.zig");
     _ = @import("sway.zig");
     _ = @import("hyprland.zig");
+    _ = @import("niri.zig");
     _ = @import("msgpack.zig");
     _ = @import("process.zig");
     _ = @import("hook.zig");
