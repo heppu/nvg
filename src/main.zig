@@ -7,11 +7,10 @@
 ///
 /// Usage: nvg <left|right|up|down> [options]
 const std = @import("std");
-const posix = std.posix;
 
 const hook_mod = @import("hook.zig");
-const process = @import("process.zig");
 const wm_mod = @import("wm.zig");
+const focus_mod = @import("focus.zig");
 const log = @import("log.zig");
 
 const Hook = hook_mod.Hook;
@@ -190,20 +189,8 @@ pub fn main() void {
         args.enabled_hooks_len,
         if (args.wm_backend) |b| @tagName(b) else "auto",
     });
-    focus(args.direction, args.timeout_ms, args.enabled_hooks[0..args.enabled_hooks_len], args.wm_backend);
-}
 
-/// Generic focus navigation.
-///
-/// 1. Connect to the window manager (auto-detect or explicit backend).
-/// 2. Get the focused window PID from the WM.
-/// 3. Walk the process tree and detect all matching hooks.
-/// 4. Iterate detected hooks in reverse (innermost first):
-///    - If hook.canMove() returns true -> hook.moveFocus() and return.
-///    - If false or null -> at edge, bubble up to next outer hook.
-/// 5. If all hooks are at edge (or none detected) -> WM moveWindowFocus().
-fn focus(direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Hook, wm_backend: ?Backend) void {
-    var conn = wm_mod.connect(wm_backend) catch |err| {
+    var conn = wm_mod.connect(args.wm_backend) catch |err| {
         switch (err) {
             wm_mod.Error.NoWmDetected => printErr("Error: no supported window manager detected. Use --wm to specify one.\n"),
             else => printErr("Error: failed to connect to window manager\n"),
@@ -212,69 +199,13 @@ fn focus(direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Ho
     };
     defer conn.deinit();
 
-    const wm_inst = conn.wm();
-
-    const focused_pid = wm_inst.getFocusedPid() orelse {
-        log.log("no focused window found, moving wm focus", .{});
-        moveWindowFocus(wm_inst, direction, timeout_ms, enabled_hooks);
-        return;
-    };
-    log.log("focused window PID: {d}", .{focused_pid});
-
-    // Detect all hooks in the process tree
-    const detected = hook_mod.detectAll(focused_pid, enabled_hooks);
-    log.log("detected {d} hook(s)", .{detected.len});
-
-    if (detected.len == 0) {
-        moveWindowFocus(wm_inst, direction, timeout_ms, enabled_hooks);
-        return;
-    }
-
-    // Iterate in reverse (innermost first)
-    const items = detected.slice();
-    var i: usize = items.len;
-    while (i > 0) {
-        i -= 1;
-        const d = items[i];
-        log.log("trying hook '{s}' (pid={d}, depth={d})", .{ d.hook.name, d.pid, d.depth });
-        const can = d.hook.canMoveFn(d.pid, direction, timeout_ms);
-        if (can) |can_move| {
-            if (can_move) {
-                // Not at edge — move within this application
-                log.log("hook '{s}' can move, executing", .{d.hook.name});
-                d.hook.moveFocusFn(d.pid, direction, timeout_ms);
-                return;
-            }
-            log.log("hook '{s}' at edge, bubbling up", .{d.hook.name});
-            // At edge — bubble up to next outer hook
-        } else {
-            log.log("hook '{s}' returned null (error/timeout), bubbling up", .{d.hook.name});
-        }
-        // null (error/timeout) — treat as at edge, bubble up
-    }
-
-    // All hooks at edge or returned null — move window manager focus
-    log.log("all hooks at edge, moving wm focus", .{});
-    moveWindowFocus(wm_inst, direction, timeout_ms, enabled_hooks);
-}
-
-/// Move window manager focus, then check if the newly focused window has
-/// any detected hooks. If so, call moveToEdge on the innermost hook
-/// with the opposite direction (so the user lands on the split closest
-/// to where they came from).
-fn moveWindowFocus(wm_inst: *wm_mod.WindowManager, direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Hook) void {
-    wm_inst.moveFocus(direction);
-
-    const next_pid = wm_inst.getFocusedPid() orelse return;
-    log.log("new focused window PID: {d}", .{next_pid});
-
-    const detected = hook_mod.detectAll(next_pid, enabled_hooks);
-    if (detected.len == 0) return;
-
-    // Innermost hook — last item in the shallowest-first list
-    const innermost = detected.items[detected.len - 1];
-    log.log("moving to edge in '{s}' (pid={d})", .{ innermost.hook.name, innermost.pid });
-    innermost.hook.moveToEdgeFn(innermost.pid, direction.opposite(), timeout_ms);
+    focus_mod.navigate(
+        conn.wm(),
+        args.direction,
+        args.timeout_ms,
+        args.enabled_hooks[0..args.enabled_hooks_len],
+        &hook_mod.detectAll,
+    );
 }
 
 // ─── Tests ───
@@ -302,13 +233,8 @@ test "Direction.fromString" {
 }
 
 // Import all sub-module tests so they're run with `zig build test`.
-//
-// Note: integration tests for the core focus() algorithm are not included here
-// because they require a running window manager instance, real /proc filesystem,
-// and running application instances. The core algorithm is kept simple enough to
-// verify by inspection, while individual components (msgpack, process tree
-// walking, hook detection) are unit-tested in isolation.
 test {
+    _ = @import("focus.zig");
     _ = @import("wm.zig");
     _ = @import("sway.zig");
     _ = @import("msgpack.zig");
