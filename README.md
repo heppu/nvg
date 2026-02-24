@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/heppu/nvg/branch/main/graph/badge.svg)](https://codecov.io/gh/heppu/nvg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-<https://github.com/user-attachments/assets/2442c40c-da36-4c5c-9ede-671fbcb4fc11>
+<https://github.com/user-attachments/assets/599e8b9d-436b-45de-853d-9daa3b4b5833>
 
 Seamless navigation between your window manager and applications without plugins.
 
@@ -16,11 +16,11 @@ Seamless navigation between your window manager and applications without plugins
 |----------------|--------|
 | Sway           | Full support |
 | i3             | Full support (same IPC protocol as Sway) |
-| Hyprland       | Planned |
+| Hyprland       | Full support |
 | dwm            | Planned |
 | awesome        | Planned |
 
-The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`), or can be specified explicitly with `--wm`.
+The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`), or can be specified explicitly with `--wm`.
 
 ## Installation
 
@@ -74,6 +74,17 @@ To limit detection to specific applications use explicit hooks list:
 bindsym $mod+h exec nvg --hooks nvim,tmux left
 ```
 
+### Hyprland
+
+In your `~/.config/hypr/hyprland.conf`, replace the default `movefocus` bindings:
+
+```
+bind = $mod, h, exec, nvg left
+bind = $mod, j, exec, nvg down
+bind = $mod, k, exec, nvg up
+bind = $mod, l, exec, nvg right
+```
+
 ## Supported Applications
 
 | Application | Status |
@@ -118,7 +129,8 @@ bindsym $mod+h exec nvg --hooks nvim,tmux left
 | `NVG_DEBUG` | Set to `1` to enable debug logging to stderr |
 | `SWAYSOCK` | Path to sway IPC socket (set automatically by sway) |
 | `I3SOCK` | Path to i3 IPC socket (set automatically by i3) |
-| `XDG_RUNTIME_DIR` | Used to locate Neovim sockets |
+| `HYPRLAND_INSTANCE_SIGNATURE` | Hyprland instance ID (set automatically by Hyprland) |
+| `XDG_RUNTIME_DIR` | Used to locate Hyprland and Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
 
 ### CLI Options
@@ -131,7 +143,7 @@ Options:
   --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
                             Available: nvim, tmux, vscode
   --wm <name>             Window manager backend (default: auto-detect)
-                            Available: sway, i3
+                            Available: sway, i3, hyprland
   -v, --version            Print version
   -h, --help               Print this help
 ```

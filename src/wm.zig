@@ -11,6 +11,7 @@ const posix = std.posix;
 
 const Direction = @import("main.zig").Direction;
 const Sway = @import("sway.zig").Sway;
+const Hyprland = @import("hyprland.zig").Hyprland;
 const log = @import("log.zig");
 
 pub const Error = error{
@@ -27,15 +28,15 @@ pub const Error = error{
 /// A window manager backend identifier.
 pub const Backend = enum {
     sway,
+    hyprland,
     // Future backends:
-    // hyprland,
     // dwm,
     // awesome,
 
     pub fn fromString(s: []const u8) ?Backend {
         if (std.mem.eql(u8, s, "sway")) return .sway;
         if (std.mem.eql(u8, s, "i3")) return .sway; // i3 uses the same protocol
-        // if (std.mem.eql(u8, s, "hyprland")) return .hyprland;
+        if (std.mem.eql(u8, s, "hyprland")) return .hyprland;
         // if (std.mem.eql(u8, s, "dwm")) return .dwm;
         // if (std.mem.eql(u8, s, "awesome")) return .awesome;
         return null;
@@ -75,8 +76,9 @@ pub const WindowManager = struct {
 /// the common WindowManager interface via the wm() method.
 pub const Connection = union(Backend) {
     sway: Sway,
+    hyprland: Hyprland,
     // Future backends:
-    // hyprland: Hyprland,
+    // dwm: Dwm,
 
     pub fn wm(self: *Connection) *WindowManager {
         return switch (self.*) {
@@ -104,11 +106,14 @@ pub fn detectBackend() ?Backend {
         return .sway; // i3 uses the same IPC protocol
     }
 
-    // Future: check HYPRLAND_INSTANCE_SIGNATURE for hyprland
-    // if (posix.getenv("HYPRLAND_INSTANCE_SIGNATURE")) |_| {
-    //     log.log("auto-detected hyprland", .{});
-    //     return .hyprland;
-    // }
+    // Check Hyprland (HYPRLAND_INSTANCE_SIGNATURE is set by Hyprland)
+    if (posix.getenv("HYPRLAND_INSTANCE_SIGNATURE")) |_| {
+        log.log("auto-detected hyprland (HYPRLAND_INSTANCE_SIGNATURE set)", .{});
+        return .hyprland;
+    }
+
+    // Future: check other WM env vars
+    // if (posix.getenv("...")) |_| { ... }
 
     return null;
 }
@@ -130,14 +135,18 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
             const sway = Sway.connect(socket_path) catch return Error.ConnectFailed;
             return .{ .sway = sway };
         },
+        .hyprland => {
+            const hyprland = Hyprland.connect() catch return Error.ConnectFailed;
+            return .{ .hyprland = hyprland };
+        },
         // Future backends would be handled here:
-        // .hyprland => { ... },
+        // .dwm => { ... },
     }
 }
 
 /// Return the list of supported backend names for help/error messages.
 pub fn backendNames() []const []const u8 {
-    return &.{ "sway", "i3" };
+    return &.{ "sway", "i3", "hyprland" };
 }
 
 // ─── Tests ───
@@ -147,6 +156,7 @@ const testing = std.testing;
 test "Backend.fromString valid names" {
     try testing.expectEqual(Backend.sway, Backend.fromString("sway").?);
     try testing.expectEqual(Backend.sway, Backend.fromString("i3").?);
+    try testing.expectEqual(Backend.hyprland, Backend.fromString("hyprland").?);
 }
 
 test "Backend.fromString unknown returns null" {
@@ -159,4 +169,5 @@ test "backendNames returns non-empty list" {
     try testing.expect(names.len > 0);
     try testing.expectEqualStrings("sway", names[0]);
     try testing.expectEqualStrings("i3", names[1]);
+    try testing.expectEqualStrings("hyprland", names[2]);
 }
