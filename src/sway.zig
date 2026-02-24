@@ -3,10 +3,14 @@
 /// Implements the i3-ipc binary protocol:
 ///   Header: "i3-ipc" (6 bytes) + uint32le payload_length + uint32le message_type
 ///   Payload: JSON (for GET_TREE) or command string (for RUN_COMMAND)
+///
+/// This backend implements the WindowManager interface, so it can be used
+/// interchangeably with other window manager backends.
 const std = @import("std");
 const posix = std.posix;
 
 const Direction = @import("main.zig").Direction;
+const wm = @import("wm.zig");
 const net = @import("net.zig");
 
 const ipc_magic = "i3-ipc";
@@ -33,6 +37,13 @@ pub const SwayError = error{
 };
 
 pub const Sway = struct {
+    /// WindowManager vtable — must be the first field so that
+    /// @fieldParentPtr can recover the Sway from a *WindowManager.
+    wm: wm.WindowManager = .{
+        .getFocusedPidFn = wmGetFocusedPid,
+        .moveFocusFn = wmMoveFocus,
+        .disconnectFn = wmDisconnect,
+    },
     fd: posix.fd_t,
 
     pub fn connect(socket_path: []const u8) !Sway {
@@ -130,6 +141,23 @@ pub const Sway = struct {
                 remaining -= n;
             }
         }
+    }
+
+    // ─── WindowManager vtable functions ───
+
+    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
+        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
+        return self.getFocusedPid();
+    }
+
+    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
+        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
+        self.moveFocus(direction);
+    }
+
+    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
+        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
+        self.disconnect();
     }
 };
 
