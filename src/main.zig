@@ -1,5 +1,9 @@
-/// nvg — Generic directional focus navigation between sway/i3
+/// nvg — Generic directional focus navigation between window manager
 /// windows and focus-aware applications (nvim, tmux, vscode).
+///
+/// Supports multiple window managers through the WindowManager interface:
+///   - sway / i3 (i3-ipc protocol)
+///   - More backends can be added by implementing the WindowManager trait.
 ///
 /// Usage: nvg <left|right|up|down> [options]
 const std = @import("std");
@@ -7,11 +11,11 @@ const posix = std.posix;
 
 const hook_mod = @import("hook.zig");
 const process = @import("process.zig");
-const sway_mod = @import("sway.zig");
+const wm_mod = @import("wm.zig");
 const log = @import("log.zig");
 
 const Hook = hook_mod.Hook;
-const Sway = sway_mod.Sway;
+const Backend = wm_mod.Backend;
 
 const version = @import("config").version;
 
@@ -53,6 +57,7 @@ const Args = struct {
     timeout_ms: u32,
     enabled_hooks: [hook_mod.all_hooks.len]*const Hook,
     enabled_hooks_len: usize,
+    wm_backend: ?Backend,
 };
 
 fn parseArgs() ?Args {
@@ -61,6 +66,7 @@ fn parseArgs() ?Args {
 
     var direction: ?Direction = null;
     var timeout_ms: u32 = 100;
+    var wm_backend: ?Backend = null;
 
     // Default: all hooks enabled
     var enabled_hooks: [hook_mod.all_hooks.len]*const Hook = undefined;
@@ -84,6 +90,17 @@ fn parseArgs() ?Args {
             };
             timeout_ms = std.fmt.parseInt(u32, val, 10) catch {
                 printErr("Error: invalid timeout value\n");
+                return null;
+            };
+        } else if (std.mem.eql(u8, arg, "--wm")) {
+            const val = args_iter.next() orelse {
+                printErr("Error: --wm requires a value\n");
+                return null;
+            };
+            wm_backend = Backend.fromString(val) orelse {
+                var err_buf: [128]u8 = undefined;
+                const err_msg = std.fmt.bufPrint(&err_buf, "Error: unknown window manager '{s}'\n", .{val}) catch "Error: unknown window manager\n";
+                printErr(err_msg);
                 return null;
             };
         } else if (std.mem.eql(u8, arg, "--hooks")) {
@@ -134,6 +151,7 @@ fn parseArgs() ?Args {
         .timeout_ms = timeout_ms,
         .enabled_hooks = enabled_hooks,
         .enabled_hooks_len = enabled_hooks_len,
+        .wm_backend = wm_backend,
     };
 }
 
@@ -141,17 +159,21 @@ fn printUsage() void {
     std.fs.File.stderr().writeAll(
         \\Usage: nvg <left|right|up|down> [options]
         \\
-        \\Generic focus navigation between sway windows and applications.
+        \\Generic focus navigation between window manager windows and applications.
         \\
         \\Options:
         \\  -t, --timeout <ms>      IPC timeout in milliseconds (default: 100)
         \\  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
         \\                           Available: nvim, tmux, vscode
+        \\  --wm <name>             Window manager backend (default: auto-detect)
+        \\                           Available: sway, i3
         \\  -v, --version            Print version
         \\  -h, --help               Print this help
         \\
         \\Environment:
         \\  NVG_DEBUG=1              Enable debug logging to stderr
+        \\  SWAYSOCK                 Sway IPC socket path (auto-detected)
+        \\  I3SOCK                   i3 IPC socket path (auto-detected)
         \\
     ) catch {};
 }
@@ -162,33 +184,39 @@ fn printErr(msg: []const u8) void {
 
 pub fn main() void {
     const args = parseArgs() orelse std.process.exit(1);
-    log.log("direction={s} timeout={d}ms hooks={d}", .{ @tagName(args.direction), args.timeout_ms, args.enabled_hooks_len });
-    focus(args.direction, args.timeout_ms, args.enabled_hooks[0..args.enabled_hooks_len]);
+    log.log("direction={s} timeout={d}ms hooks={d} wm={s}", .{
+        @tagName(args.direction),
+        args.timeout_ms,
+        args.enabled_hooks_len,
+        if (args.wm_backend) |b| @tagName(b) else "auto",
+    });
+    focus(args.direction, args.timeout_ms, args.enabled_hooks[0..args.enabled_hooks_len], args.wm_backend);
 }
 
 /// Generic focus navigation.
 ///
-/// 1. Get the focused window PID from sway.
-/// 2. Walk the process tree and detect all matching hooks.
-/// 3. Iterate detected hooks in reverse (innermost first):
+/// 1. Connect to the window manager (auto-detect or explicit backend).
+/// 2. Get the focused window PID from the WM.
+/// 3. Walk the process tree and detect all matching hooks.
+/// 4. Iterate detected hooks in reverse (innermost first):
 ///    - If hook.canMove() returns true -> hook.moveFocus() and return.
 ///    - If false or null -> at edge, bubble up to next outer hook.
-/// 4. If all hooks are at edge (or none detected) -> sway moveWindowFocus().
-fn focus(direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Hook) void {
-    const sway_socket = posix.getenv("SWAYSOCK") orelse {
-        printErr("Error: SWAYSOCK not set\n");
+/// 5. If all hooks are at edge (or none detected) -> WM moveWindowFocus().
+fn focus(direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Hook, wm_backend: ?Backend) void {
+    var conn = wm_mod.connect(wm_backend) catch |err| {
+        switch (err) {
+            wm_mod.Error.NoWmDetected => printErr("Error: no supported window manager detected. Use --wm to specify one.\n"),
+            else => printErr("Error: failed to connect to window manager\n"),
+        }
         std.process.exit(1);
     };
+    defer conn.deinit();
 
-    var sway = Sway.connect(sway_socket) catch {
-        printErr("Error: failed to connect to sway\n");
-        std.process.exit(1);
-    };
-    defer sway.disconnect();
+    const wm_inst = conn.wm();
 
-    const focused_pid = sway.getFocusedPid() orelse {
-        log.log("no focused window found, moving sway focus", .{});
-        moveWindowFocus(&sway, direction, timeout_ms, enabled_hooks);
+    const focused_pid = wm_inst.getFocusedPid() orelse {
+        log.log("no focused window found, moving wm focus", .{});
+        moveWindowFocus(wm_inst, direction, timeout_ms, enabled_hooks);
         return;
     };
     log.log("focused window PID: {d}", .{focused_pid});
@@ -198,7 +226,7 @@ fn focus(direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Ho
     log.log("detected {d} hook(s)", .{detected.len});
 
     if (detected.len == 0) {
-        moveWindowFocus(&sway, direction, timeout_ms, enabled_hooks);
+        moveWindowFocus(wm_inst, direction, timeout_ms, enabled_hooks);
         return;
     }
 
@@ -225,19 +253,19 @@ fn focus(direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Ho
         // null (error/timeout) — treat as at edge, bubble up
     }
 
-    // All hooks at edge or returned null — move sway focus
-    log.log("all hooks at edge, moving sway focus", .{});
-    moveWindowFocus(&sway, direction, timeout_ms, enabled_hooks);
+    // All hooks at edge or returned null — move window manager focus
+    log.log("all hooks at edge, moving wm focus", .{});
+    moveWindowFocus(wm_inst, direction, timeout_ms, enabled_hooks);
 }
 
-/// Move sway window focus, then check if the newly focused window has
+/// Move window manager focus, then check if the newly focused window has
 /// any detected hooks. If so, call moveToEdge on the innermost hook
 /// with the opposite direction (so the user lands on the split closest
 /// to where they came from).
-fn moveWindowFocus(sway: *Sway, direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Hook) void {
-    sway.moveFocus(direction);
+fn moveWindowFocus(wm_inst: *wm_mod.WindowManager, direction: Direction, timeout_ms: u32, enabled_hooks: []const *const Hook) void {
+    wm_inst.moveFocus(direction);
 
-    const next_pid = sway.getFocusedPid() orelse return;
+    const next_pid = wm_inst.getFocusedPid() orelse return;
     log.log("new focused window PID: {d}", .{next_pid});
 
     const detected = hook_mod.detectAll(next_pid, enabled_hooks);
@@ -276,11 +304,12 @@ test "Direction.fromString" {
 // Import all sub-module tests so they're run with `zig build test`.
 //
 // Note: integration tests for the core focus() algorithm are not included here
-// because they require a running sway instance, real /proc filesystem, and
-// running application instances. The core algorithm is kept simple enough to
+// because they require a running window manager instance, real /proc filesystem,
+// and running application instances. The core algorithm is kept simple enough to
 // verify by inspection, while individual components (msgpack, process tree
 // walking, hook detection) are unit-tested in isolation.
 test {
+    _ = @import("wm.zig");
     _ = @import("sway.zig");
     _ = @import("msgpack.zig");
     _ = @import("process.zig");

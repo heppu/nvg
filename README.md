@@ -6,9 +6,21 @@
 
 <https://github.com/user-attachments/assets/2442c40c-da36-4c5c-9ede-671fbcb4fc11>
 
-Seamless navigation between sway and applications without plugins.
+Seamless navigation between your window manager and applications without plugins.
 
-`nvg` can be used as a drop-in replacement for `focus` command in sway config. This allows using sway's keybindings to control movement also within supported applications.
+`nvg` can be used as a drop-in replacement for your window manager's focus command. This allows using your WM's keybindings to control movement also within supported applications.
+
+### Supported Window Managers
+
+| Window Manager | Status |
+|----------------|--------|
+| Sway           | Full support |
+| i3             | Full support (same IPC protocol as Sway) |
+| Hyprland       | Planned |
+| dwm            | Planned |
+| awesome        | Planned |
+
+The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`), or can be specified explicitly with `--wm`.
 
 ## Installation
 
@@ -35,7 +47,9 @@ sudo zig build install -Doptimize=ReleaseSafe --prefix /usr/local
 
 ## Setup
 
-In your `~/.config/sway/config` change all `focus` bindings to use `exec nvg`:
+### Sway / i3
+
+In your `~/.config/sway/config` (or `~/.config/i3/config`) change all `focus` bindings to use `exec nvg`:
 
 ```
 bindsym $mod+h exec nvg left
@@ -44,9 +58,15 @@ bindsym $mod+k exec nvg up
 bindsym $mod+l exec nvg right
 ```
 
-That's it. nvg automatically detects Neovim, tmux, and VS Code in the
-focused window and navigates through their splits/panes before moving to the
-next sway window.
+That's it. nvg automatically detects the running window manager and
+navigates through Neovim, tmux, and VS Code splits/panes before moving to the
+next window.
+
+To explicitly select a window manager backend:
+
+```
+bindsym $mod+h exec nvg --wm sway left
+```
 
 To limit detection to specific applications use explicit hooks list:
 
@@ -64,13 +84,14 @@ bindsym $mod+h exec nvg --hooks nvim,tmux left
 
 ## How It Works
 
-1. Get the focused window PID from sway.
-2. Walk the process tree and detect supported applications.
-3. Try the **innermost** application first (e.g. nvim before tmux):
+1. Connect to the window manager (auto-detect or `--wm` flag).
+2. Get the focused window PID from the WM.
+3. Walk the process tree and detect supported applications.
+4. Try the **innermost** application first (e.g. nvim before tmux):
    - If it can move in the requested direction, move internally. Done.
    - If at edge, bubble up to the next layer.
-4. If all layers are at their edge, move sway window focus.
-5. When entering a new window, jump to the split closest to where you came from.
+5. If all layers are at their edge, move WM window focus.
+6. When entering a new window, jump to the split closest to where you came from.
 
 ```
  sway window A                      sway window B
@@ -86,7 +107,7 @@ bindsym $mod+h exec nvg --hooks nvim,tmux left
   focus right from nvim split2:
     1. nvim: at right edge -> bubble up
     2. tmux: at right edge -> bubble up
-    3. sway: move focus to window B
+    3. wm: move focus to window B
     4. enter window B -> land at leftmost tmux pane -> leftmost nvim split
 ```
 
@@ -96,8 +117,24 @@ bindsym $mod+h exec nvg --hooks nvim,tmux left
 |----------|-------------|
 | `NVG_DEBUG` | Set to `1` to enable debug logging to stderr |
 | `SWAYSOCK` | Path to sway IPC socket (set automatically by sway) |
+| `I3SOCK` | Path to i3 IPC socket (set automatically by i3) |
 | `XDG_RUNTIME_DIR` | Used to locate Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
+
+### CLI Options
+
+```
+Usage: nvg <left|right|up|down> [options]
+
+Options:
+  -t, --timeout <ms>      IPC timeout in milliseconds (default: 100)
+  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
+                            Available: nvim, tmux, vscode
+  --wm <name>             Window manager backend (default: auto-detect)
+                            Available: sway, i3
+  -v, --version            Print version
+  -h, --help               Print this help
+```
 
 ## Development
 
