@@ -8,8 +8,6 @@ on:
 
 jobs:
   ci:
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -49,19 +47,83 @@ jobs:
         with:
           files: zig-out/test-results.xml
           report_type: test_results
+          flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           files: zig-out/coverage/cov.xml
+          flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Build release
         run: zig build release
 
+      - name: Upload nvg binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvg-linux-amd64
+          path: zig-out/bin/nvg-linux-amd64
+          if-no-files-found: error
+
+      - name: Upload release binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: zig-out/bin/nvg-linux-*
+          if-no-files-found: error
+
+  e2e:
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        wm: [sway, i3, niri]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download nvg binary
+        uses: actions/download-artifact@v4
+        with:
+          name: nvg-linux-amd64
+
+      - name: Prepare nvg binary
+        run: |
+          chmod +x nvg-linux-amd64
+          sudo mv nvg-linux-amd64 /usr/local/bin/nvg
+
+      - name: Run ${{ matrix.wm }} e2e tests
+        env:
+          NVG_BIN: /usr/local/bin/nvg
+          JUNIT_XML: ${{ github.workspace }}/test-results-${{ matrix.wm }}.xml
+        run: bash test/e2e/test-${{ matrix.wm }}.sh
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: test-results-${{ matrix.wm }}.xml
+          report_type: test_results
+          flags: ${{ matrix.wm }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  release:
+    needs: [ci, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+
       - name: Get version
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: version
         run: |
           VERSION=$(grep -oP '\.version\s*=\s*"\K[^"]+' build.zig.zon)
@@ -83,4 +145,4 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes \
-            zig-out/bin/nvg-linux-*
+            nvg-linux-*
