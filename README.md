@@ -17,10 +17,11 @@ Seamless navigation between your window manager and applications without plugins
 | Sway           | Full support |
 | i3             | Full support (same IPC protocol as Sway) |
 | Hyprland       | Full support |
+| Niri           | Full support |
 | dwm            | Planned |
 | awesome        | Planned |
 
-The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`), or can be specified explicitly with `--wm`.
+The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`), or can be specified explicitly with `--wm`.
 
 ## Installation
 
@@ -85,6 +86,19 @@ bind = $mod, k, exec, nvg up
 bind = $mod, l, exec, nvg right
 ```
 
+### Niri
+
+In your `~/.config/niri/config.kdl`, add bindings that call nvg:
+
+```kdl
+binds {
+    Mod+H { spawn "nvg" "left"; }
+    Mod+J { spawn "nvg" "down"; }
+    Mod+K { spawn "nvg" "up"; }
+    Mod+L { spawn "nvg" "right"; }
+}
+```
+
 ## Supported Applications
 
 | Application | Status |
@@ -130,6 +144,7 @@ bind = $mod, l, exec, nvg right
 | `SWAYSOCK` | Path to sway IPC socket (set automatically by sway) |
 | `I3SOCK` | Path to i3 IPC socket (set automatically by i3) |
 | `HYPRLAND_INSTANCE_SIGNATURE` | Hyprland instance ID (set automatically by Hyprland) |
+| `NIRI_SOCKET` | Niri IPC socket path (set automatically by niri) |
 | `XDG_RUNTIME_DIR` | Used to locate Hyprland and Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
 
@@ -143,7 +158,7 @@ Options:
   --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
                             Available: nvim, tmux, vscode
   --wm <name>             Window manager backend (default: auto-detect)
-                            Available: sway, i3, hyprland
+                            Available: sway, i3, hyprland, niri
   -v, --version            Print version
   -h, --help               Print this help
 ```

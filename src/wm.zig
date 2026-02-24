@@ -12,6 +12,7 @@ const posix = std.posix;
 const Direction = @import("main.zig").Direction;
 const Sway = @import("sway.zig").Sway;
 const Hyprland = @import("hyprland.zig").Hyprland;
+const Niri = @import("niri.zig").Niri;
 const log = @import("log.zig");
 
 pub const Error = error{
@@ -29,6 +30,7 @@ pub const Error = error{
 pub const Backend = enum {
     sway,
     hyprland,
+    niri,
     // Future backends:
     // dwm,
     // awesome,
@@ -37,6 +39,7 @@ pub const Backend = enum {
         if (std.mem.eql(u8, s, "sway")) return .sway;
         if (std.mem.eql(u8, s, "i3")) return .sway; // i3 uses the same protocol
         if (std.mem.eql(u8, s, "hyprland")) return .hyprland;
+        if (std.mem.eql(u8, s, "niri")) return .niri;
         // if (std.mem.eql(u8, s, "dwm")) return .dwm;
         // if (std.mem.eql(u8, s, "awesome")) return .awesome;
         return null;
@@ -77,6 +80,7 @@ pub const WindowManager = struct {
 pub const Connection = union(Backend) {
     sway: Sway,
     hyprland: Hyprland,
+    niri: Niri,
     // Future backends:
     // dwm: Dwm,
 
@@ -112,6 +116,12 @@ pub fn detectBackend() ?Backend {
         return .hyprland;
     }
 
+    // Check Niri (NIRI_SOCKET is set by niri)
+    if (posix.getenv("NIRI_SOCKET")) |_| {
+        log.log("auto-detected niri (NIRI_SOCKET set)", .{});
+        return .niri;
+    }
+
     // Future: check other WM env vars
     // if (posix.getenv("...")) |_| { ... }
 
@@ -139,6 +149,10 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
             const hyprland = Hyprland.connect() catch return Error.ConnectFailed;
             return .{ .hyprland = hyprland };
         },
+        .niri => {
+            const niri = Niri.connect() catch return Error.ConnectFailed;
+            return .{ .niri = niri };
+        },
         // Future backends would be handled here:
         // .dwm => { ... },
     }
@@ -146,7 +160,7 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
 
 /// Return the list of supported backend names for help/error messages.
 pub fn backendNames() []const []const u8 {
-    return &.{ "sway", "i3", "hyprland" };
+    return &.{ "sway", "i3", "hyprland", "niri" };
 }
 
 // ─── Tests ───
@@ -157,6 +171,7 @@ test "Backend.fromString valid names" {
     try testing.expectEqual(Backend.sway, Backend.fromString("sway").?);
     try testing.expectEqual(Backend.sway, Backend.fromString("i3").?);
     try testing.expectEqual(Backend.hyprland, Backend.fromString("hyprland").?);
+    try testing.expectEqual(Backend.niri, Backend.fromString("niri").?);
 }
 
 test "Backend.fromString unknown returns null" {
@@ -170,4 +185,5 @@ test "backendNames returns non-empty list" {
     try testing.expectEqualStrings("sway", names[0]);
     try testing.expectEqualStrings("i3", names[1]);
     try testing.expectEqualStrings("hyprland", names[2]);
+    try testing.expectEqualStrings("niri", names[3]);
 }
