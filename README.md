@@ -18,10 +18,10 @@ Seamless navigation between your window manager and applications without plugins
 | i3             | Full support (same IPC protocol as Sway) |
 | Hyprland       | Full support |
 | Niri           | Full support |
-| dwm            | Planned |
+| dwm            | Full support ([dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/) required) |
 | awesome        | Planned |
 
-The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`), or can be specified explicitly with `--wm`.
+The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`, `DWM_FIFO`), or can be specified explicitly with `--wm`.
 
 ## Installation
 
@@ -99,6 +99,32 @@ binds {
 }
 ```
 
+### dwm
+
+Requires the [dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/) and `xdotool` installed.
+
+Set the `DWM_FIFO` environment variable to enable auto-detection, or use `--wm dwm`:
+
+```sh
+export DWM_FIFO=/tmp/dwm.fifo
+```
+
+In your `config.h`, add keybindings that call nvg:
+
+```c
+static const char *nvg_left[]  = { "nvg", "left",  NULL };
+static const char *nvg_down[]  = { "nvg", "down",  NULL };
+static const char *nvg_up[]    = { "nvg", "up",    NULL };
+static const char *nvg_right[] = { "nvg", "right", NULL };
+
+static const Key keys[] = {
+    { MODKEY, XK_h, spawn, {.v = nvg_left} },
+    { MODKEY, XK_j, spawn, {.v = nvg_down} },
+    { MODKEY, XK_k, spawn, {.v = nvg_up} },
+    { MODKEY, XK_l, spawn, {.v = nvg_right} },
+};
+```
+
 ## Supported Applications
 
 | Application | Status |
@@ -145,6 +171,7 @@ binds {
 | `I3SOCK` | Path to i3 IPC socket (set automatically by i3) |
 | `HYPRLAND_INSTANCE_SIGNATURE` | Hyprland instance ID (set automatically by Hyprland) |
 | `NIRI_SOCKET` | Niri IPC socket path (set automatically by niri) |
+| `DWM_FIFO` | Path to dwm FIFO for dwmfifo patch (default: `/tmp/dwm.fifo`) |
 | `XDG_RUNTIME_DIR` | Used to locate Hyprland and Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
 
@@ -158,7 +185,7 @@ Options:
   --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
                             Available: nvim, tmux, vscode
   --wm <name>             Window manager backend (default: auto-detect)
-                            Available: sway, i3, hyprland, niri
+                             Available: sway, i3, hyprland, niri, dwm
   -v, --version            Print version
   -h, --help               Print this help
 ```
