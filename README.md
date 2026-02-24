@@ -172,6 +172,54 @@ zig fmt --check src/ build.zig test_runner.zig     # Check formatting
 zig build run -- left                              # Debug build and run
 ```
 
+## Adding a New Window Manager
+
+Adding support for a new WM requires changes to exactly 5 files (4 source + 1 test):
+
+### 1. `src/<wm>.zig` — IPC client
+
+Create a new file implementing the `WindowManager` vtable (`getFocusedPid`, `moveFocus`, `disconnect`). Use `src/niri.zig` or `src/hyprland.zig` as a template.
+
+### 2. `src/wm.zig` — Backend registration
+
+- Add the new variant to the `Backend` enum
+- Add the name to `Backend.fromString()`
+- Add the variant to the `Connection` union
+- Add auto-detection in `detectBackend()` (check the WM's env var)
+- Add the connection case in `connect()`
+- Add the name to `backendNames()`
+- Update the tests
+
+### 3. `src/main.zig` — CLI help
+
+Add the new WM name to the `--wm` help text in the usage string.
+
+### 4. `README.md` — Documentation
+
+- Add the WM to the "Supported Window Managers" table
+- Add a setup section with example keybindings
+- Add any env vars to the "Configuration" table
+
+### 5. `test/e2e/test-<wm>.sh` — E2E tests
+
+Create a new test script that implements the adapter interface and calls `run_tests`. The shared test runner in `test/e2e/helpers.sh` exercises the same 6 test groups for every WM. Your script only needs to define the adapter functions:
+
+| Function | Purpose |
+|---|---|
+| `install_deps` | Install WM packages via apt |
+| `start_wm` | Start the WM in headless mode |
+| `wm_cleanup` | Clean up WM resources, call `cleanup` at the end |
+| `spawn_window` | Spawn a window (terminal) in the WM |
+| `wait_for_windows N` | Wait until N windows are visible |
+| `get_focused` | Return an identifier for the focused window |
+| `wm_focus DIRECTION` | Move focus using the WM's native command |
+| `run_nvg DIRECTION` | Invoke `$NVG_BIN` with the correct env/args |
+
+Use `test/e2e/test-sway.sh` as a template. Then register the new test in CI:
+
+- `.github/workflows/ci.yml` — add the WM name to the `matrix.wm` array
+- `codecov.yml` — add a new flag under `individual_flags`
+
 ## Inspiration
 
 [https://github.com/cjab/nvim-sway](https://github.com/cjab/nvim-sway)

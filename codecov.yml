@@ -8,5 +8,22 @@ coverage:
       default:
         target: 50%
 
+flag_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+        threshold: 5%
+      - type: patch
+        target: 50%
+  individual_flags:
+    - name: unit
+      paths:
+        - src/
+    - name: sway
+    - name: i3
+    - name: hyprland
+    - name: niri
+
 ignore:
   - "build.zig"
