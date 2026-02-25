@@ -49,7 +49,7 @@ install_deps() {
         libxcb-icccm4 libxcb-res0 \
         libdisplay-info1 libliftoff0 libxcb1 \
         xwayland \
-        meson ninja-build pkg-config libwayland-dev wayland-protocols
+        pkg-config libwayland-dev wayland-protocols
 
     # Install river from Fedora RPMs
     if ! command -v river &>/dev/null; then
@@ -81,8 +81,8 @@ install_deps() {
         tmpdir=$(mktemp -d)
         curl -sLo "$tmpdir/lswt.tar.gz" "$LSWT_URL"
         tar -xzf "$tmpdir/lswt.tar.gz" -C "$tmpdir"
-        (cd "$tmpdir/lswt-${LSWT_VERSION}" && meson setup build && ninja -C build)
-        sudo install -m 755 "$tmpdir/lswt-${LSWT_VERSION}/build/lswt" /usr/local/bin/lswt
+        (cd "$tmpdir/lswt-${LSWT_VERSION}" && make)
+        sudo install -m 755 "$tmpdir/lswt-${LSWT_VERSION}/lswt" /usr/local/bin/lswt
         rm -rf "$tmpdir"
     fi
 
