@@ -172,7 +172,7 @@ start_wm() {
     # Set the default layout before starting rivertile.
     riverctl default-layout rivertile
 
-    env WAYLAND_DISPLAY="$WAYLAND_DISPLAY" rivertile -view-padding 0 -outer-padding 0 &
+    env WAYLAND_DISPLAY="$WAYLAND_DISPLAY" rivertile -view-padding 0 -outer-padding 0 -main-location top -main-count 999 &
     local rivertile_pid=$!
     track_pid "$rivertile_pid"
     sleep 0.5
