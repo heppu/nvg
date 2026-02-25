@@ -53,7 +53,7 @@ install_deps() {
         libxcb1-dev libxcb-composite0-dev libxcb-render0-dev \
         libxcb-render-util0-dev libxcb-xinput-dev libxcb-ewmh-dev \
         libxcb-icccm4-dev libxcb-res0-dev libxcb-dri3-dev \
-        libxcb-present-dev libxcb-shm-dev libxcb-xfixes0-dev \
+        libxcb-present-dev libxcb-shm0-dev libxcb-xfixes0-dev \
         hwdata xwayland
 
     # Build wlroots from source
