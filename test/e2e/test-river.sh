@@ -4,9 +4,9 @@
 # Starts River in headless mode (WLR_BACKENDS=headless) and verifies that
 # nvg can navigate between windows using the Wayland protocol.
 #
-# River is not packaged for Ubuntu 24.04, so we download pre-built binaries
-# from the Fedora repos and extract libwlroots from the matching RPM.
-# We also build lswt from source to query focused window state.
+# River and wlroots are not packaged for Ubuntu 24.04, so we build them
+# from source (wlroots 0.17.x + river 0.3.4). We also build lswt from
+# source to query focused window state.
 #
 # Requirements (installed by install_deps): river, riverctl, foot, lswt, jq
 # Usage: NVG_BIN=./nvg bash test/e2e/test-river.sh
@@ -26,51 +26,70 @@ RIVER_PID=""
 RIVER_LOG=""
 WINDOW_COUNTER=0
 
-# Fedora 42 RPM URLs for river and wlroots
-RIVER_RPM_URL="https://rpmfind.net/linux/fedora/linux/updates/42/Everything/x86_64/Packages/r/river-0.3.11-1.fc42.x86_64.rpm"
-WLROOTS_RPM_URL="https://rpmfind.net/linux/fedora/linux/updates/42/Everything/x86_64/Packages/w/wlroots-0.19.2-1.fc42.x86_64.rpm"
+# Source versions — wlroots 0.17.x is the newest series compatible with
+# Ubuntu 24.04's system libraries (libdisplay-info 0.1.x, libinput 1.25).
+WLROOTS_VERSION="0.17.4"
+RIVER_VERSION="0.3.4"
+ZIG_VERSION="0.13.0"
 
 # lswt source (small C project for querying Wayland toplevels)
 LSWT_VERSION="v2.0.0"
 LSWT_URL="https://git.sr.ht/~leon_plickat/lswt/archive/${LSWT_VERSION}.tar.gz"
 
 install_deps() {
-    log_info "Installing river runtime dependencies..."
+    log_info "Installing river build and runtime dependencies..."
 
     sudo apt-get update -qq
     sudo apt-get install -y --no-install-recommends \
-        foot jq rpm2cpio \
+        foot jq \
+        meson ninja-build cmake pkg-config \
+        libwayland-dev wayland-protocols \
         libwayland-client0 libwayland-server0 \
-        libxkbcommon0 libinput10 libevdev2 \
-        libpixman-1-0 libgbm1 libdrm2 \
-        libegl-mesa0 libgles2 libgl1-mesa-dri \
-        libseat1 libudev1 libsystemd0 \
-        libxcb-composite0 libxcb-render0 libxcb-xinput0 libxcb-ewmh2 \
-        libxcb-icccm4 libxcb-res0 \
-        libdisplay-info1 libliftoff0 libxcb1 \
-        xwayland \
-        pkg-config libwayland-dev wayland-protocols
+        libxkbcommon-dev libinput-dev libevdev-dev \
+        libpixman-1-dev libdrm-dev libgbm-dev \
+        libegl-dev libgles-dev \
+        libseat-dev libudev-dev \
+        libdisplay-info-dev liblcms2-dev \
+        libxcb1-dev libxcb-composite0-dev libxcb-render0-dev \
+        libxcb-render-util0-dev libxcb-xinput-dev libxcb-ewmh-dev \
+        libxcb-icccm4-dev libxcb-res0-dev libxcb-dri3-dev \
+        libxcb-present-dev libxcb-shm-dev libxcb-xfixes0-dev \
+        hwdata xwayland
 
-    # Install river from Fedora RPMs
+    # Build wlroots from source
+    if ! pkg-config --exists wlroots 2>/dev/null; then
+        log_info "Building wlroots ${WLROOTS_VERSION} from source..."
+        local tmpdir
+        tmpdir=$(mktemp -d)
+        curl -sLo "$tmpdir/wlroots.tar.gz" \
+            "https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/${WLROOTS_VERSION}/wlroots-${WLROOTS_VERSION}.tar.gz"
+        tar -xzf "$tmpdir/wlroots.tar.gz" -C "$tmpdir"
+        (cd "$tmpdir/wlroots-${WLROOTS_VERSION}" && meson setup build -Dprefix=/usr/local && ninja -C build)
+        sudo ninja -C "$tmpdir/wlroots-${WLROOTS_VERSION}/build" install
+        sudo ldconfig
+        rm -rf "$tmpdir"
+    fi
+
+    # Build river from source (requires Zig 0.13.x)
     if ! command -v river &>/dev/null; then
-        log_info "Installing river and wlroots from Fedora RPMs..."
+        log_info "Building river ${RIVER_VERSION} from source..."
         local tmpdir
         tmpdir=$(mktemp -d)
 
-        # Download and extract river
-        curl -sLo "$tmpdir/river.rpm" "$RIVER_RPM_URL"
-        (cd "$tmpdir" && rpm2cpio river.rpm | cpio -idm 2>/dev/null)
-        sudo install -m 755 "$tmpdir/usr/bin/river" /usr/local/bin/river
-        sudo install -m 755 "$tmpdir/usr/bin/riverctl" /usr/local/bin/riverctl
-        sudo install -m 755 "$tmpdir/usr/bin/rivertile" /usr/local/bin/rivertile
+        # Download Zig 0.13.x (river 0.3.4 requires this version)
+        curl -sLo "$tmpdir/zig.tar.xz" \
+            "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+        tar -xJf "$tmpdir/zig.tar.xz" -C "$tmpdir"
+        local zig="$tmpdir/zig-linux-x86_64-${ZIG_VERSION}/zig"
 
-        # Download and extract wlroots shared library
-        curl -sLo "$tmpdir/wlroots.rpm" "$WLROOTS_RPM_URL"
-        (cd "$tmpdir" && rpm2cpio wlroots.rpm | cpio -idm 2>/dev/null)
-        # Install libwlroots and its symlinks
-        sudo find "$tmpdir" -name 'libwlroots*' -exec cp -a {} /usr/local/lib/ \;
-        sudo ldconfig
-
+        # Download and build river
+        curl -sLo "$tmpdir/river.tar.gz" \
+            "https://codeberg.org/river/river/archive/v${RIVER_VERSION}.tar.gz"
+        tar -xzf "$tmpdir/river.tar.gz" -C "$tmpdir"
+        (cd "$tmpdir/river" && "$zig" build -Doptimize=ReleaseSafe -Dpie=true --summary none)
+        sudo install -m 755 "$tmpdir/river/zig-out/bin/river" /usr/local/bin/river
+        sudo install -m 755 "$tmpdir/river/zig-out/bin/riverctl" /usr/local/bin/riverctl
+        sudo install -m 755 "$tmpdir/river/zig-out/bin/rivertile" /usr/local/bin/rivertile
         rm -rf "$tmpdir"
     fi
 
