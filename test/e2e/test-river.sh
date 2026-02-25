@@ -165,6 +165,18 @@ start_wm() {
     export XDG_CURRENT_DESKTOP=river
 
     log_info "River running (PID=$RIVER_PID, WAYLAND_DISPLAY=$WAYLAND_DISPLAY)"
+
+    # Start rivertile layout generator so views get tiled with proper geometry.
+    # Without a layout generator, views have no spatial position and
+    # directional focus (left/right/up/down) won't work.
+    # Set the default layout before starting rivertile.
+    riverctl default-layout rivertile
+
+    env WAYLAND_DISPLAY="$WAYLAND_DISPLAY" rivertile -view-padding 0 -outer-padding 0 &
+    local rivertile_pid=$!
+    track_pid "$rivertile_pid"
+    sleep 0.5
+    log_info "rivertile layout generator started (PID=$rivertile_pid)"
 }
 
 wm_cleanup() {
