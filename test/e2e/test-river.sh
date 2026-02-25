@@ -33,8 +33,10 @@ RIVER_VERSION="0.3.4"
 ZIG_VERSION="0.13.0"
 
 # lswt source (small C project for querying Wayland toplevels)
-LSWT_VERSION="v2.0.0"
-LSWT_URL="https://git.sr.ht/~leon_plickat/lswt/archive/${LSWT_VERSION}.tar.gz"
+# We need a version newer than v2.0.0 for --force-protocol support,
+# which is required to get activated/focused state from the wlr protocol.
+LSWT_COMMIT="e6e93345"
+LSWT_URL="https://git.sr.ht/~leon_plickat/lswt/archive/${LSWT_COMMIT}.tar.gz"
 
 install_deps() {
     log_info "Installing river build and runtime dependencies..."
@@ -100,8 +102,8 @@ install_deps() {
         tmpdir=$(mktemp -d)
         curl -sLo "$tmpdir/lswt.tar.gz" "$LSWT_URL"
         tar -xzf "$tmpdir/lswt.tar.gz" -C "$tmpdir"
-        (cd "$tmpdir/lswt-${LSWT_VERSION}" && make)
-        sudo install -m 755 "$tmpdir/lswt-${LSWT_VERSION}/lswt" /usr/local/bin/lswt
+        (cd "$tmpdir/lswt-${LSWT_COMMIT}" && make)
+        sudo install -m 755 "$tmpdir/lswt-${LSWT_COMMIT}/lswt" /usr/local/bin/lswt
         rm -rf "$tmpdir"
     fi
 
