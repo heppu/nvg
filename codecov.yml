@@ -25,6 +25,7 @@ flag_management:
     - name: hyprland
     - name: niri
     - name: dwm
+    - name: river
 
 ignore:
   - "build.zig"

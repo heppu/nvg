@@ -32,6 +32,10 @@ JUNIT_SUITE="${JUNIT_SUITE:-e2e}"
 # WM name for log output. Override in per-WM scripts.
 WM_NAME="${WM_NAME:-unknown}"
 
+# Per-command timeout (seconds) for run_test. Prevents a single hung
+# command from blocking the entire test suite.
+TEST_CMD_TIMEOUT="${TEST_CMD_TIMEOUT:-30}"
+
 # ─── Counters ───
 
 TESTS_PASSED=0
@@ -81,6 +85,8 @@ log_warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 
 # run_test LABEL EXPECTED_EXIT COMMAND [ARGS...]
 #   Runs COMMAND, checks exit code matches EXPECTED_EXIT.
+#   Each command is wrapped with a timeout (TEST_CMD_TIMEOUT seconds)
+#   to prevent a single hung command from blocking the suite.
 run_test() {
     local label="$1"
     local expected_exit="$2"
@@ -88,9 +94,29 @@ run_test() {
 
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     local actual_exit=0
-    "$@" >/dev/null 2>&1 || actual_exit=$?
+    # Run the command in a background subshell with a timeout.
+    # We can't use `timeout` directly because the command may be a shell
+    # function (e.g. run_nvg) which isn't visible to external programs.
+    ( "$@" ) >/dev/null 2>&1 &
+    local cmd_pid=$!
+    local timed_out=false
+    ( sleep "$TEST_CMD_TIMEOUT" && kill "$cmd_pid" 2>/dev/null ) &
+    local timer_pid=$!
+    wait "$cmd_pid" 2>/dev/null || actual_exit=$?
+    # Cancel the timer if the command finished before the timeout.
+    kill "$timer_pid" 2>/dev/null || true
+    wait "$timer_pid" 2>/dev/null || true
+    # If the command was killed by our timer, treat it as a timeout (exit 124).
+    if [[ "$actual_exit" -eq 137 || "$actual_exit" -eq 143 ]]; then
+        timed_out=true
+    fi
 
-    if [[ "$actual_exit" -eq "$expected_exit" ]]; then
+    if [[ "$timed_out" == true ]]; then
+        local msg="command timed out after ${TEST_CMD_TIMEOUT}s"
+        log_fail "$label ($msg)"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        _record_result "$label" "fail" "$msg"
+    elif [[ "$actual_exit" -eq "$expected_exit" ]]; then
         log_pass "$label (exit=$actual_exit)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
         _record_result "$label" "pass" ""
