@@ -228,7 +228,7 @@ wm_focus() {
 }
 
 run_nvg() {
-    "$NVG_BIN" --wm river "$1"
+    run_nvg_bin "$NVG_BIN" --wm river "$1"
 }
 
 # ─── Run ───

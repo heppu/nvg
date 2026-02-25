@@ -36,6 +36,35 @@ WM_NAME="${WM_NAME:-unknown}"
 # command from blocking the entire test suite.
 TEST_CMD_TIMEOUT="${TEST_CMD_TIMEOUT:-30}"
 
+# ─── Coverage ───
+
+# Set KCOV_DIR to a directory path to enable kcov coverage collection.
+# Each run_nvg_bin invocation will be wrapped with kcov --collect-only,
+# and finalize_coverage will generate the final Cobertura XML report.
+KCOV_DIR="${KCOV_DIR:-}"
+
+# run_nvg_bin [ENV...] BINARY ARGS...
+#   Invoke the nvg binary, optionally under kcov for coverage collection.
+#   Use this from each WM's run_nvg function instead of calling $NVG_BIN directly.
+#   If KCOV_DIR is set, wraps the invocation with kcov --collect-only.
+run_nvg_bin() {
+    if [[ -n "$KCOV_DIR" ]]; then
+        kcov --collect-only --include-pattern=src/ "$KCOV_DIR" "$@"
+    else
+        "$@"
+    fi
+}
+
+# finalize_coverage
+#   Generate the final Cobertura XML report from accumulated kcov data.
+#   Call this after all tests have completed.
+finalize_coverage() {
+    [[ -z "$KCOV_DIR" ]] && return 0
+    log_info "Generating coverage report..."
+    kcov --report-only --cobertura-only "$KCOV_DIR" "$NVG_BIN" || true
+    log_info "Coverage report written to $KCOV_DIR"
+}
+
 # ─── Counters ───
 
 TESTS_PASSED=0
@@ -268,6 +297,7 @@ print_summary() {
     echo ""
 
     _write_junit_xml
+    finalize_coverage
 
     if [[ "$TESTS_FAILED" -gt 0 ]]; then
         exit 1
