@@ -187,7 +187,7 @@ wait_for_windows() {
         local count
         # Use lswt CSV mode to count toplevels.
         # Format: 't' = title, one line per toplevel.
-        count=$(lswt --force-protocol wlr -c t 2>/dev/null | wc -l) || count=0
+        count=$(lswt --force-protocol zwlr-foreign-toplevel-management-unstable-v1 -c t 2>/dev/null | wc -l) || count=0
         if [[ "$count" -ge "$expected" ]]; then
             return 0
         fi
@@ -196,7 +196,7 @@ wait_for_windows() {
         if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
             log_warn "Timed out waiting for $expected windows (have $count)"
             log_warn "lswt output:"
-            lswt --force-protocol wlr 2>&1 || true
+            lswt --force-protocol zwlr-foreign-toplevel-management-unstable-v1 2>&1 || true
             return 1
         fi
     done
@@ -206,7 +206,7 @@ get_focused() {
     # Use lswt with wlr protocol to get activated state.
     # The ext-foreign-toplevel protocol lacks state info, so we force wlr.
     # lswt CSV mode uses comma as delimiter: "title,true/false"
-    lswt --force-protocol wlr -c tA 2>/dev/null \
+    lswt --force-protocol zwlr-foreign-toplevel-management-unstable-v1 -c tA 2>/dev/null \
         | awk -F',' '$2 == "true" { print $1 }' \
         | head -1
 }
