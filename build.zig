@@ -78,6 +78,24 @@ pub fn build(b: *std.Build) void {
     const coverage_step = b.step("coverage", "Generate test coverage (requires kcov)");
     coverage_step.dependOn(&install_coverage.step);
 
+    // Coverage-e2e step: build the nvg binary with the LLVM backend so that
+    // kcov can instrument it during e2e tests. The self-hosted backend's DWARF
+    // is incompatible with kcov (see comment above coverage_tests).
+    // ReleaseSafe retains debug info and safety checks while using optimized
+    // codegen that avoids ptrace/breakpoint issues seen with Debug builds.
+    const coverage_e2e_exe = b.addExecutable(.{
+        .name = "nvg",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .imports = &.{.{ .name = "config", .module = config.createModule() }},
+        }),
+        .use_llvm = true,
+    });
+    const coverage_e2e_step = b.step("coverage-e2e", "Build nvg with LLVM backend for e2e coverage (requires kcov)");
+    coverage_e2e_step.dependOn(&b.addInstallArtifact(coverage_e2e_exe, .{}).step);
+
     // Release step: build ReleaseSafe binaries for all supported platforms and
     // generate SHA256 checksums.
     // Usage: zig build release

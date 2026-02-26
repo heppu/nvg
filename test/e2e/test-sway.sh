@@ -118,7 +118,7 @@ wm_focus() {
 }
 
 run_nvg() {
-    "$NVG_BIN" --wm sway "$1"
+    run_nvg_bin "$NVG_BIN" --wm sway "$1"
 }
 
 # ─── Run ───

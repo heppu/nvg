@@ -61,11 +61,21 @@ jobs:
       - name: Build release
         run: zig build release
 
+      - name: Build coverage-instrumented binary for e2e
+        run: zig build coverage-e2e
+
       - name: Upload nvg binary
         uses: actions/upload-artifact@v4
         with:
           name: nvg-linux-amd64
           path: zig-out/bin/nvg-linux-amd64
+          if-no-files-found: error
+
+      - name: Upload coverage-instrumented binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvg-coverage
+          path: zig-out/bin/nvg
           if-no-files-found: error
 
       - name: Upload release binaries
@@ -86,20 +96,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download nvg binary
+      - name: Download coverage-instrumented nvg binary
         uses: actions/download-artifact@v4
         with:
-          name: nvg-linux-amd64
+          name: nvg-coverage
 
       - name: Prepare nvg binary
         run: |
-          chmod +x nvg-linux-amd64
-          sudo mv nvg-linux-amd64 /usr/local/bin/nvg
+          chmod +x nvg
+          sudo mv nvg /usr/local/bin/nvg
+
+      - name: Install kcov
+        run: |
+          sudo tee /etc/apt/sources.list.d/plucky.sources > /dev/null <<'EOF'
+          Types: deb
+          URIs: http://archive.ubuntu.com/ubuntu/
+          Suites: plucky
+          Components: universe
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo tee /etc/apt/preferences.d/plucky-pin > /dev/null <<'EOF'
+          Package: *
+          Pin: release n=plucky
+          Pin-Priority: -10
+
+          Package: kcov
+          Pin: release n=plucky
+          Pin-Priority: 500
+          EOF
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends kcov
 
       - name: Run ${{ matrix.wm }} e2e tests
         env:
           NVG_BIN: /usr/local/bin/nvg
           JUNIT_XML: ${{ github.workspace }}/test-results-${{ matrix.wm }}.xml
+          KCOV_DIR: ${{ github.workspace }}/kcov-${{ matrix.wm }}
         run: bash test/e2e/test-${{ matrix.wm }}.sh
 
       - name: Upload test results to Codecov
@@ -108,6 +140,14 @@ jobs:
         with:
           files: test-results-${{ matrix.wm }}.xml
           report_type: test_results
+          flags: ${{ matrix.wm }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: kcov-${{ matrix.wm }}/cov.xml
           flags: ${{ matrix.wm }}
           token: ${{ secrets.CODECOV_TOKEN }}
 

@@ -145,7 +145,7 @@ wm_focus() {
 }
 
 run_nvg() {
-    env DISPLAY="$DISPLAY_NUM" I3SOCK="$I3SOCK" "$NVG_BIN" --wm i3 "$1"
+    DISPLAY="$DISPLAY_NUM" I3SOCK="$I3SOCK" run_nvg_bin "$NVG_BIN" --wm i3 "$1"
 }
 
 # ─── Run ───

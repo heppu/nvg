@@ -161,7 +161,7 @@ wm_focus() {
 }
 
 run_nvg() {
-    env DISPLAY="$DISPLAY_NUM" DWM_FIFO="$DWM_FIFO_PATH" "$NVG_BIN" --wm dwm "$1"
+    DISPLAY="$DISPLAY_NUM" DWM_FIFO="$DWM_FIFO_PATH" run_nvg_bin "$NVG_BIN" --wm dwm "$1"
 }
 
 # ─── Run ───
