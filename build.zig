@@ -81,12 +81,14 @@ pub fn build(b: *std.Build) void {
     // Coverage-e2e step: build the nvg binary with the LLVM backend so that
     // kcov can instrument it during e2e tests. The self-hosted backend's DWARF
     // is incompatible with kcov (see comment above coverage_tests).
+    // ReleaseSafe retains debug info and safety checks while using optimized
+    // codegen that avoids ptrace/breakpoint issues seen with Debug builds.
     const coverage_e2e_exe = b.addExecutable(.{
         .name = "nvg",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
-            .optimize = .Debug,
+            .optimize = .ReleaseSafe,
             .imports = &.{.{ .name = "config", .module = config.createModule() }},
         }),
         .use_llvm = true,

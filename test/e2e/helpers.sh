@@ -126,7 +126,9 @@ run_test() {
     # Run the command in a background subshell with a timeout.
     # We can't use `timeout` directly because the command may be a shell
     # function (e.g. run_nvg) which isn't visible to external programs.
-    ( "$@" ) >/dev/null 2>&1 &
+    # Only redirect stdout; keep stderr visible for diagnostics (kcov errors,
+    # Zig runtime panics, etc.).
+    ( "$@" ) >/dev/null &
     local cmd_pid=$!
     local timed_out=false
     ( sleep "$TEST_CMD_TIMEOUT" && kill "$cmd_pid" 2>/dev/null ) &
