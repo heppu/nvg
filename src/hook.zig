@@ -74,7 +74,8 @@ pub const DetectedList = struct {
 pub const all_hooks = [_]*const Hook{
     &@import("hooks/nvim.zig").hook,
     &@import("hooks/tmux.zig").hook,
-    &@import("hooks/vscode.zig").hook,
+    &@import("hooks/wezterm.zig").hook,
+    &@import("hooks/kitty.zig").hook,
 };
 
 /// Walk the process tree from focused_pid and detect all matching hooks.
@@ -122,10 +123,16 @@ test "findHookByName returns tmux hook" {
     try std.testing.expectEqualStrings("tmux", h.?.name);
 }
 
-test "findHookByName returns vscode hook" {
-    const h = findHookByName("vscode");
+test "findHookByName returns wezterm hook" {
+    const h = findHookByName("wezterm");
     try std.testing.expect(h != null);
-    try std.testing.expectEqualStrings("vscode", h.?.name);
+    try std.testing.expectEqualStrings("wezterm", h.?.name);
+}
+
+test "findHookByName returns kitty hook" {
+    const h = findHookByName("kitty");
+    try std.testing.expect(h != null);
+    try std.testing.expectEqualStrings("kitty", h.?.name);
 }
 
 test "findHookByName returns null for unknown" {
