@@ -1,5 +1,5 @@
 /// nvg — Generic directional focus navigation between window manager
-/// windows and focus-aware applications (nvim, tmux, vscode).
+/// windows and focus-aware applications (nvim, tmux, wezterm, kitty).
 ///
 /// Supports multiple window managers through the WindowManager interface:
 ///   - sway / i3 (i3-ipc protocol)
@@ -163,7 +163,7 @@ fn printUsage() void {
         \\Options:
         \\  -t, --timeout <ms>      IPC timeout in milliseconds (default: 100)
         \\  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
-        \\                           Available: nvim, tmux, vscode
+        \\                           Available: nvim, tmux, wezterm, kitty
         \\  --wm <name>             Window manager backend (default: auto-detect)
         \\                           Available: sway, i3, hyprland, niri, river, dwm
         \\  -v, --version            Print version
@@ -254,5 +254,6 @@ test {
     _ = @import("log.zig");
     _ = @import("hooks/nvim.zig");
     _ = @import("hooks/tmux.zig");
-    _ = @import("hooks/vscode.zig");
+    _ = @import("hooks/wezterm.zig");
+    _ = @import("hooks/kitty.zig");
 }
