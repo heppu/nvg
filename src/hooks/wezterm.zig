@@ -290,3 +290,49 @@ test "WeztermEnv socketPath returns path when set" {
     env.socket_len = path.len;
     try std.testing.expectEqualStrings("/tmp/wezterm.sock", env.socketPath().?);
 }
+
+test "resolveEnv returns null for nonexistent pid" {
+    // PID 4194304 should not exist — resolveEnv should try /proc/<pid>/environ
+    // and fall back to current env. Unless WEZTERM_PANE is set, returns null.
+    const env = resolveEnv(4194304);
+    if (posix.getenv("WEZTERM_PANE") == null) {
+        try std.testing.expectEqual(@as(?WeztermEnv, null), env);
+    }
+}
+
+test "canMove returns null for nonexistent pid" {
+    // With a PID that doesn't exist and no WEZTERM_PANE in env, resolveEnv
+    // returns null, so canMove returns null immediately.
+    if (posix.getenv("WEZTERM_PANE") != null) return error.SkipZigTest;
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .left, 100));
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .right, 100));
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .up, 100));
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .down, 100));
+}
+
+test "moveFocus does not crash for nonexistent pid" {
+    if (posix.getenv("WEZTERM_PANE") != null) return error.SkipZigTest;
+    // Should return immediately (resolveEnv returns null)
+    moveFocus(4194304, .left, 100);
+    moveFocus(4194304, .right, 100);
+    moveFocus(4194304, .up, 100);
+    moveFocus(4194304, .down, 100);
+}
+
+test "moveToEdge does not crash for nonexistent pid" {
+    if (posix.getenv("WEZTERM_PANE") != null) return error.SkipZigTest;
+    // Should return immediately (resolveEnv returns null)
+    moveToEdge(4194304, .left, 100);
+    moveToEdge(4194304, .right, 100);
+    moveToEdge(4194304, .up, 100);
+    moveToEdge(4194304, .down, 100);
+}
+
+test "hook vtable has correct name" {
+    try std.testing.expectEqualStrings("wezterm", hook.name);
+}
+
+test "hook detectFn matches wezterm via vtable" {
+    try std.testing.expectEqual(@as(?i32, 42), hook.detectFn(42, "wezterm-gui", "", ""));
+    try std.testing.expectEqual(@as(?i32, null), hook.detectFn(42, "bash", "/usr/bin/bash", ""));
+}
