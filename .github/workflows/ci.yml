@@ -42,19 +42,19 @@ jobs:
       - name: Run tests with coverage
         run: zig build coverage -- --junit zig-out/junit.xml
 
-      - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
-        with:
-          files: zig-out/test-results.xml
-          report_type: test_results
-          flags: unit
-          token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           files: zig-out/coverage/cov.xml
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: zig-out/junit.xml
+          report_type: test_results
           flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
 
