@@ -32,37 +32,25 @@ JUNIT_SUITE="${JUNIT_SUITE:-e2e}"
 # WM name for log output. Override in per-WM scripts.
 WM_NAME="${WM_NAME:-unknown}"
 
-# Per-command timeout (seconds) for run_test. Prevents a single hung
-# command from blocking the entire test suite.
-TEST_CMD_TIMEOUT="${TEST_CMD_TIMEOUT:-30}"
-
 # ─── Coverage ───
 
 # Set KCOV_DIR to a directory path to enable kcov coverage collection.
-# Each run_nvg_bin invocation will be wrapped with kcov --collect-only,
-# and finalize_coverage will generate the final Cobertura XML report.
+# Each run_nvg_bin invocation runs kcov in full mode (not --collect-only)
+# which generates a Cobertura XML report that is automatically merged
+# across runs into $KCOV_DIR/cov.xml.
 KCOV_DIR="${KCOV_DIR:-}"
 
-# run_nvg_bin [ENV...] BINARY ARGS...
+# run_nvg_bin BINARY ARGS...
 #   Invoke the nvg binary, optionally under kcov for coverage collection.
 #   Use this from each WM's run_nvg function instead of calling $NVG_BIN directly.
-#   If KCOV_DIR is set, wraps the invocation with kcov --collect-only.
+#   If KCOV_DIR is set, wraps the invocation with kcov. Each run automatically
+#   merges into the same output directory.
 run_nvg_bin() {
     if [[ -n "$KCOV_DIR" ]]; then
-        kcov --collect-only --include-pattern=src/ "$KCOV_DIR" "$@"
+        kcov --cobertura-only --include-pattern=src/ "$KCOV_DIR" "$@"
     else
         "$@"
     fi
-}
-
-# finalize_coverage
-#   Generate the final Cobertura XML report from accumulated kcov data.
-#   Call this after all tests have completed.
-finalize_coverage() {
-    [[ -z "$KCOV_DIR" ]] && return 0
-    log_info "Generating coverage report..."
-    kcov --report-only --cobertura-only "$KCOV_DIR" "$NVG_BIN" || true
-    log_info "Coverage report written to $KCOV_DIR"
 }
 
 # ─── Counters ───
@@ -113,9 +101,9 @@ log_warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 # ─── Test assertions ───
 
 # run_test LABEL EXPECTED_EXIT COMMAND [ARGS...]
-#   Runs COMMAND, checks exit code matches EXPECTED_EXIT.
-#   Each command is wrapped with a timeout (TEST_CMD_TIMEOUT seconds)
-#   to prevent a single hung command from blocking the suite.
+#   Runs COMMAND in the foreground, checks exit code matches EXPECTED_EXIT.
+#   Stdout is redirected to /dev/null; stderr is kept for diagnostics.
+#   The CI workflow timeout guards against hung commands.
 run_test() {
     local label="$1"
     local expected_exit="$2"
@@ -123,31 +111,9 @@ run_test() {
 
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
     local actual_exit=0
-    # Run the command in a background subshell with a timeout.
-    # We can't use `timeout` directly because the command may be a shell
-    # function (e.g. run_nvg) which isn't visible to external programs.
-    # Only redirect stdout; keep stderr visible for diagnostics (kcov errors,
-    # Zig runtime panics, etc.).
-    ( "$@" ) >/dev/null &
-    local cmd_pid=$!
-    local timed_out=false
-    ( sleep "$TEST_CMD_TIMEOUT" && kill "$cmd_pid" 2>/dev/null ) &
-    local timer_pid=$!
-    wait "$cmd_pid" 2>/dev/null || actual_exit=$?
-    # Cancel the timer if the command finished before the timeout.
-    kill "$timer_pid" 2>/dev/null || true
-    wait "$timer_pid" 2>/dev/null || true
-    # If the command was killed by our timer, treat it as a timeout (exit 124).
-    if [[ "$actual_exit" -eq 137 || "$actual_exit" -eq 143 ]]; then
-        timed_out=true
-    fi
+    "$@" >/dev/null || actual_exit=$?
 
-    if [[ "$timed_out" == true ]]; then
-        local msg="command timed out after ${TEST_CMD_TIMEOUT}s"
-        log_fail "$label ($msg)"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        _record_result "$label" "fail" "$msg"
-    elif [[ "$actual_exit" -eq "$expected_exit" ]]; then
+    if [[ "$actual_exit" -eq "$expected_exit" ]]; then
         log_pass "$label (exit=$actual_exit)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
         _record_result "$label" "pass" ""
@@ -299,7 +265,6 @@ print_summary() {
     echo ""
 
     _write_junit_xml
-    finalize_coverage
 
     if [[ "$TESTS_FAILED" -gt 0 ]]; then
         exit 1

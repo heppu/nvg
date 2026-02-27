@@ -23,6 +23,14 @@ Seamless navigation between your window manager and applications without plugins
 
 The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`, `DWM_FIFO`), or can be specified explicitly with `--wm`.
 
+## Supported Applications
+
+| Application | Status |
+|-------------|--------|
+| Neovim      | Full support |
+| tmux        | Full support |
+| VS Code     | Detection only (navigation not yet implemented) |
+
 ## Installation
 
 ### Download binary
@@ -124,14 +132,6 @@ static const Key keys[] = {
     { MODKEY, XK_l, spawn, {.v = nvg_right} },
 };
 ```
-
-## Supported Applications
-
-| Application | Status |
-|-------------|--------|
-| Neovim      | Full support |
-| tmux        | Full support |
-| VS Code     | Detection only (navigation not yet implemented) |
 
 ## How It Works
 
