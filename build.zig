@@ -65,6 +65,10 @@ pub fn build(b: *std.Build) void {
         "--cobertura-only",
         "--include-pattern=src/",
     });
+    // Tests must always execute; without this the build system caches
+    // the kcov output directory and skips re-running when sources are
+    // unchanged, producing stale coverage data and no JUnit XML.
+    coverage_cmd.has_side_effects = true;
     const coverage_output = coverage_cmd.addOutputDirectoryArg(".");
     coverage_cmd.addArtifactArg(coverage_tests);
     if (b.args) |args| {
