@@ -357,6 +357,47 @@ test "readEnvFromProc returns false for nonexistent pid" {
     try std.testing.expect(!readEnvFromProc(4194304, &env));
 }
 
+test "readEnvFromProc reads current process environ" {
+    // Verify it doesn't crash when reading /proc/self/environ.
+    // Won't find KITTY_LISTEN_ON unless running inside Kitty.
+    var env = KittyEnv{};
+    const pid: i32 = @intCast(std.os.linux.getpid());
+    _ = readEnvFromProc(pid, &env);
+}
+
+test "resolveEnv returns null for nonexistent pid" {
+    // PID 4194304 doesn't exist. Unless KITTY_LISTEN_ON is set in current
+    // env, resolveEnv should return null.
+    const env = resolveEnv(4194304);
+    if (posix.getenv("KITTY_LISTEN_ON") == null) {
+        try std.testing.expectEqual(@as(?KittyEnv, null), env);
+    }
+}
+
+test "canMove returns null for nonexistent pid" {
+    if (posix.getenv("KITTY_LISTEN_ON") != null) return error.SkipZigTest;
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .left, 100));
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .right, 100));
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .up, 100));
+    try std.testing.expectEqual(@as(?bool, null), canMove(4194304, .down, 100));
+}
+
+test "moveFocus does not crash for nonexistent pid" {
+    if (posix.getenv("KITTY_LISTEN_ON") != null) return error.SkipZigTest;
+    moveFocus(4194304, .left, 100);
+    moveFocus(4194304, .right, 100);
+    moveFocus(4194304, .up, 100);
+    moveFocus(4194304, .down, 100);
+}
+
+test "moveToEdge does not crash for nonexistent pid" {
+    if (posix.getenv("KITTY_LISTEN_ON") != null) return error.SkipZigTest;
+    moveToEdge(4194304, .left, 100);
+    moveToEdge(4194304, .right, 100);
+    moveToEdge(4194304, .up, 100);
+    moveToEdge(4194304, .down, 100);
+}
+
 test "hasNeighbor returns null for non-array root" {
     try std.testing.expectEqual(@as(?bool, null), hasNeighbor(.null, 1, .left));
 }
@@ -409,4 +450,138 @@ test "hasNeighbor returns null for unknown window id" {
     defer parsed.deinit();
 
     try std.testing.expectEqual(@as(?bool, null), hasNeighbor(parsed.value, 999, .left));
+}
+
+test "hasNeighbor skips unfocused OS window" {
+    const json =
+        \\[{"is_focused": false, "tabs": [{"is_focused": true, "windows": [
+        \\  {"id": 1, "is_focused": true, "at_left": false, "at_right": false, "at_top": false, "at_bottom": false}
+        \\]}]},
+        \\{"is_focused": true, "tabs": [{"is_focused": true, "windows": [
+        \\  {"id": 2, "is_focused": true, "at_left": true, "at_right": false, "at_top": false, "at_bottom": false}
+        \\]}]}]
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const parsed = try std.json.parseFromSlice(
+        std.json.Value,
+        arena.allocator(),
+        json,
+        .{ .allocate = .alloc_always },
+    );
+    defer parsed.deinit();
+
+    // Window 1 is in the unfocused OS window — should not be found
+    try std.testing.expectEqual(@as(?bool, null), hasNeighbor(parsed.value, 1, .left));
+    // Window 2 is in the focused OS window
+    try std.testing.expectEqual(@as(?bool, false), hasNeighbor(parsed.value, 2, .left));
+    try std.testing.expectEqual(@as(?bool, true), hasNeighbor(parsed.value, 2, .right));
+}
+
+test "hasNeighbor skips unfocused tab" {
+    const json =
+        \\[{"is_focused": true, "tabs": [
+        \\  {"is_focused": false, "windows": [
+        \\    {"id": 1, "is_focused": true, "at_left": false, "at_right": false, "at_top": false, "at_bottom": false}
+        \\  ]},
+        \\  {"is_focused": true, "windows": [
+        \\    {"id": 2, "is_focused": true, "at_left": false, "at_right": true, "at_top": false, "at_bottom": false}
+        \\  ]}
+        \\]}]
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const parsed = try std.json.parseFromSlice(
+        std.json.Value,
+        arena.allocator(),
+        json,
+        .{ .allocate = .alloc_always },
+    );
+    defer parsed.deinit();
+
+    // Window 1 is in the unfocused tab — should not be found
+    try std.testing.expectEqual(@as(?bool, null), hasNeighbor(parsed.value, 1, .left));
+    // Window 2 is in the focused tab — at_right=true means at edge
+    try std.testing.expectEqual(@as(?bool, false), hasNeighbor(parsed.value, 2, .right));
+    try std.testing.expectEqual(@as(?bool, true), hasNeighbor(parsed.value, 2, .left));
+}
+
+test "hasNeighbor with multiple windows in tab" {
+    const json =
+        \\[{"is_focused": true, "tabs": [{"is_focused": true, "windows": [
+        \\  {"id": 1, "is_focused": false, "at_left": true, "at_right": false, "at_top": true, "at_bottom": true},
+        \\  {"id": 2, "is_focused": true, "at_left": false, "at_right": true, "at_top": true, "at_bottom": true}
+        \\]}]}]
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const parsed = try std.json.parseFromSlice(
+        std.json.Value,
+        arena.allocator(),
+        json,
+        .{ .allocate = .alloc_always },
+    );
+    defer parsed.deinit();
+
+    // Window 1: at_left=true, at_right=false
+    try std.testing.expectEqual(@as(?bool, false), hasNeighbor(parsed.value, 1, .left));
+    try std.testing.expectEqual(@as(?bool, true), hasNeighbor(parsed.value, 1, .right));
+    // Window 2: at_left=false, at_right=true
+    try std.testing.expectEqual(@as(?bool, true), hasNeighbor(parsed.value, 2, .left));
+    try std.testing.expectEqual(@as(?bool, false), hasNeighbor(parsed.value, 2, .right));
+}
+
+test "hasNeighbor returns null for empty array" {
+    const json = "[]";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const parsed = try std.json.parseFromSlice(
+        std.json.Value,
+        arena.allocator(),
+        json,
+        .{ .allocate = .alloc_always },
+    );
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(?bool, null), hasNeighbor(parsed.value, 1, .left));
+}
+
+test "hasNeighbor returns null when edge key missing" {
+    // Window without at_left field
+    const json =
+        \\[{"is_focused": true, "tabs": [{"is_focused": true, "windows": [
+        \\  {"id": 1, "is_focused": true}
+        \\]}]}]
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const parsed = try std.json.parseFromSlice(
+        std.json.Value,
+        arena.allocator(),
+        json,
+        .{ .allocate = .alloc_always },
+    );
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(?bool, null), hasNeighbor(parsed.value, 1, .left));
+}
+
+test "hook vtable has correct name" {
+    try std.testing.expectEqualStrings("kitty", hook.name);
+}
+
+test "hook detectFn matches kitty via vtable" {
+    try std.testing.expectEqual(@as(?i32, 42), hook.detectFn(42, "kitty", "", ""));
+    try std.testing.expectEqual(@as(?i32, null), hook.detectFn(42, "kitten", "", ""));
+    try std.testing.expectEqual(@as(?i32, null), hook.detectFn(42, "bash", "/usr/bin/bash", ""));
 }
