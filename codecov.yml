@@ -21,11 +21,29 @@ flag_management:
       paths:
         - src/
     - name: sway
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: i3
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: hyprland
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: niri
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: dwm
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: river
+      paths:
+        - src/
+        - "!src/hooks/"
 
 ignore:
   - "build.zig"
