@@ -93,7 +93,6 @@ pub const Hyprland = struct {
         if (total == 0) return null;
         return buf[0..total];
     }
-
 };
 
 /// Parse the "pid" field from a Hyprland `j/activewindow` JSON response.

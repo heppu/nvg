@@ -124,7 +124,6 @@ pub const River = struct {
         wl.sendSync() orelse return;
         wl.processEvents() orelse return;
     }
-
 };
 
 // ─── Minimal Wayland wire protocol client ───

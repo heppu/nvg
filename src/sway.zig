@@ -129,7 +129,6 @@ pub const Sway = struct {
             }
         }
     }
-
 };
 
 /// Recursively find the PID of the focused node in the sway tree.

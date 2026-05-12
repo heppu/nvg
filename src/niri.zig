@@ -95,7 +95,6 @@ pub const Niri = struct {
         if (end == 0) return null;
         return buf[0..end];
     }
-
 };
 
 /// Parse the PID from a Niri FocusedWindow response.

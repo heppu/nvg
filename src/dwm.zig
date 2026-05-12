@@ -94,7 +94,6 @@ pub const Dwm = struct {
             return;
         };
     }
-
 };
 
 // ─── X11 protocol helpers ───
