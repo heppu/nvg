@@ -30,7 +30,7 @@ NIRI_LOG=""
 SWAY_CONFIG=""
 SWAY_PID=""
 
-NIRI_RPM_URL="https://download.copr.fedorainfracloud.org/results/yalter/niri/fedora-42-x86_64/09901731-niri/niri-25.11-2.fc42.x86_64.rpm"
+NIRI_RPM_URL="https://download.copr.fedorainfracloud.org/results/yalter/niri/fedora-42-x86_64/10388858-niri/niri-26.04-1.fc42.x86_64.rpm"
 
 install_deps() {
     log_info "Installing niri runtime dependencies..."
