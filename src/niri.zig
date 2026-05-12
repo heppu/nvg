@@ -16,7 +16,7 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const wm = @import("wm.zig");
 const net = @import("net.zig");
 const log = @import("log.zig");

@@ -9,7 +9,7 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const Sway = @import("sway.zig").Sway;
 const Hyprland = @import("hyprland.zig").Hyprland;
 const Niri = @import("niri.zig").Niri;
