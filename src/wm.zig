@@ -18,14 +18,8 @@ const Dwm = @import("dwm.zig").Dwm;
 const log = @import("log.zig");
 
 pub const Error = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    InvalidHeader,
-    ParseFailed,
-    SocketPathTooLong,
     NoWmDetected,
-    UnknownBackend,
+    ConnectFailed,
 };
 
 /// A window manager backend identifier.

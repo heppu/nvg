@@ -18,15 +18,6 @@ const wm = @import("wm.zig");
 const net = @import("net.zig");
 const log = @import("log.zig");
 
-pub const HyprlandError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    ParseFailed,
-    SocketPathTooLong,
-    NoSocketPath,
-};
-
 pub const Hyprland = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Hyprland from a *WindowManager.
@@ -41,12 +32,12 @@ pub const Hyprland = struct {
     /// Build a Hyprland backend from the environment.
     /// Does not open a persistent connection — each IPC call connects anew.
     pub fn connect() !Hyprland {
-        const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return HyprlandError.NoSocketPath;
-        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return HyprlandError.NoSocketPath;
+        const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return error.NoSocketPath;
+        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
         var path_buf: [posix.PATH_MAX]u8 = undefined;
         const path = std.fmt.bufPrint(&path_buf, "{s}/hypr/{s}/.socket.sock", .{ xdg, his }) catch {
-            return HyprlandError.SocketPathTooLong;
+            return error.SocketPathTooLong;
         };
 
         var result = Hyprland{

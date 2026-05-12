@@ -26,13 +26,6 @@ const wm = @import("wm.zig");
 const net = @import("net.zig");
 const log = @import("log.zig");
 
-pub const DwmError = error{
-    ConnectFailed,
-    WriteFailed,
-    NoFifoPath,
-    FifoPathTooLong,
-};
-
 const default_fifo_path = "/tmp/dwm.fifo";
 
 pub const Dwm = struct {
@@ -50,7 +43,7 @@ pub const Dwm = struct {
     /// Reads the FIFO path from $DWM_FIFO, defaulting to /tmp/dwm.fifo.
     pub fn connect() !Dwm {
         const path = posix.getenv("DWM_FIFO") orelse default_fifo_path;
-        if (path.len >= posix.PATH_MAX) return DwmError.FifoPathTooLong;
+        if (path.len >= posix.PATH_MAX) return error.FifoPathTooLong;
 
         var result = Dwm{
             .fifo_path = undefined,

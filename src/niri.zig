@@ -21,15 +21,6 @@ const wm = @import("wm.zig");
 const net = @import("net.zig");
 const log = @import("log.zig");
 
-pub const NiriError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    ParseFailed,
-    SocketPathTooLong,
-    NoSocketPath,
-};
-
 pub const Niri = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Niri from a *WindowManager.
@@ -44,8 +35,8 @@ pub const Niri = struct {
     /// Build a Niri backend from the environment.
     /// Does not open a persistent connection — each IPC call connects anew.
     pub fn connect() !Niri {
-        const path = posix.getenv("NIRI_SOCKET") orelse return NiriError.NoSocketPath;
-        if (path.len >= posix.PATH_MAX) return NiriError.SocketPathTooLong;
+        const path = posix.getenv("NIRI_SOCKET") orelse return error.NoSocketPath;
+        if (path.len >= posix.PATH_MAX) return error.SocketPathTooLong;
 
         var result = Niri{
             .socket_path = undefined,

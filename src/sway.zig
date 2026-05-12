@@ -27,15 +27,6 @@ const IpcHeader = extern struct {
     msg_type: u32 align(1),
 };
 
-pub const SwayError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    InvalidHeader,
-    ParseFailed,
-    SocketPathTooLong,
-};
-
 pub const Sway = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Sway from a *WindowManager.
@@ -51,7 +42,7 @@ pub const Sway = struct {
         const fd = try posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0);
         errdefer posix.close(fd);
         posix.connect(fd, @ptrCast(&addr), @sizeOf(posix.sockaddr.un)) catch {
-            return SwayError.ConnectFailed;
+            return error.ConnectFailed;
         };
         return .{ .fd = fd };
     }

@@ -27,16 +27,6 @@ const net = @import("net.zig");
 const process = @import("process.zig");
 const log = @import("log.zig");
 
-pub const RiverError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    ParseFailed,
-    SocketPathTooLong,
-    NoSocketPath,
-    ProtocolError,
-};
-
 pub const River = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the River from a *WindowManager.
@@ -51,12 +41,12 @@ pub const River = struct {
     /// Build a River backend from the environment.
     /// The Wayland display socket is at $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.
     pub fn connect() !River {
-        const wayland_display = posix.getenv("WAYLAND_DISPLAY") orelse return RiverError.NoSocketPath;
-        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return RiverError.NoSocketPath;
+        const wayland_display = posix.getenv("WAYLAND_DISPLAY") orelse return error.NoSocketPath;
+        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
         var path_buf: [posix.PATH_MAX]u8 = undefined;
         const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ xdg, wayland_display }) catch {
-            return RiverError.SocketPathTooLong;
+            return error.SocketPathTooLong;
         };
 
         var result = River{
