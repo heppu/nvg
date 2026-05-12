@@ -26,7 +26,7 @@ jobs:
       - name: Stage site
         run: |
           mkdir -p _site
-          cp index.html demo.html _site/
+          cp index.html _site/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
