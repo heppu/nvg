@@ -44,17 +44,7 @@ start_wm() {
     XVFB_PID=$!
     track_pid "$XVFB_PID"
 
-    # Wait for Xvfb to be ready
-    local timeout=10
-    local elapsed=0
-    while ! DISPLAY="$DISPLAY_NUM" xdpyinfo &>/dev/null; do
-        sleep 0.2
-        elapsed=$(echo "$elapsed + 0.2" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for Xvfb"
-            return 1
-        fi
-    done
+    wait_until 'DISPLAY="$DISPLAY_NUM" xdpyinfo' 10 "Xvfb on $DISPLAY_NUM" "$XVFB_PID" || return 1
     log_info "Xvfb ready"
 
     # Write minimal i3 config
@@ -75,27 +65,10 @@ I3CFG
     I3_PID=$!
     track_pid "$I3_PID"
 
-    # Wait for i3 IPC socket.
-    local elapsed=0
-    local timeout=15
-    while true; do
-        local sock
-        sock=$(DISPLAY="$DISPLAY_NUM" i3 --get-socketpath 2>/dev/null) || true
-        if [[ -n "$sock" && -S "$sock" ]]; then
-            export I3SOCK="$sock"
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for i3 to start"
-            return 1
-        fi
-        if ! kill -0 "$I3_PID" 2>/dev/null; then
-            log_fail "i3 process died during startup"
-            return 1
-        fi
-    done
+    wait_until \
+        'I3SOCK=$(DISPLAY="$DISPLAY_NUM" i3 --get-socketpath 2>/dev/null); [[ -S "$I3SOCK" ]]' \
+        15 "i3 IPC socket" "$I3_PID" || return 1
+    export I3SOCK
 
     log_info "i3 running (PID=$I3_PID, I3SOCK=$I3SOCK, DISPLAY=$DISPLAY_NUM)"
 }
@@ -109,29 +82,9 @@ spawn_window() {
     _i3msg exec "xterm -e sleep 120" >/dev/null 2>&1
 }
 
-wait_for_windows() {
-    local expected="$1"
-    local timeout="${2:-10}"
-    local elapsed=0
-
-    while true; do
-        local count
-        count=$(DISPLAY="$DISPLAY_NUM" i3-msg -t get_tree 2>/dev/null \
-            | jq '[.. | select(.type? == "con" and (.pid? > 0 or .window? > 0))] | length' 2>/dev/null) || count=0
-        if [[ "$count" -ge "$expected" ]]; then
-            return 0
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_warn "Timed out waiting for $expected windows (have $count)"
-            log_warn "i3 tree dump:"
-            DISPLAY="$DISPLAY_NUM" i3-msg -t get_tree 2>&1 | jq '.' 2>&1 || true
-            log_warn "xterm processes:"
-            ps aux | grep xterm || true
-            return 1
-        fi
-    done
+count_windows() {
+    DISPLAY="$DISPLAY_NUM" i3-msg -t get_tree 2>/dev/null \
+        | jq '[.. | select(.type? == "con" and (.pid? > 0 or .window? > 0))] | length' 2>/dev/null || echo 0
 }
 
 get_focused() {

@@ -47,32 +47,11 @@ SWAYCFG
     SWAY_PID=$!
     track_pid "$SWAY_PID"
 
-    # Wait for the Sway IPC socket to appear.
-    # Sway sets SWAYSOCK for child processes, but since we started it as
-    # a background process, we need to find the socket ourselves.
-    local timeout=15
-    local elapsed=0
-    while [[ -z "${SWAYSOCK:-}" ]]; do
-        # Sway socket is typically at $XDG_RUNTIME_DIR/sway-ipc.*.sock
-        local sock
-        sock=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-            -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null \
-            | head -1) || true
-        if [[ -n "$sock" ]]; then
-            export SWAYSOCK="$sock"
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for Sway to start"
-            return 1
-        fi
-        if ! kill -0 "$SWAY_PID" 2>/dev/null; then
-            log_fail "Sway process died during startup"
-            return 1
-        fi
-    done
+    # Sway socket is typically at $XDG_RUNTIME_DIR/sway-ipc.*.sock
+    wait_until \
+        'SWAYSOCK=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" -maxdepth 1 -name "sway-ipc.*.sock" -type s 2>/dev/null | head -1); [[ -n "$SWAYSOCK" ]]' \
+        15 "sway IPC socket" "$SWAY_PID" || return 1
+    export SWAYSOCK
 
     log_info "Sway running (PID=$SWAY_PID, SWAYSOCK=$SWAYSOCK)"
 }
@@ -86,25 +65,9 @@ spawn_window() {
     swaymsg exec "foot -e sleep 120" >/dev/null 2>&1
 }
 
-wait_for_windows() {
-    local expected="$1"
-    local timeout="${2:-10}"
-    local elapsed=0
-
-    while true; do
-        local count
-        count=$(swaymsg -t get_tree 2>/dev/null \
-            | jq '[.. | select(.pid? > 0 and .type? == "con")] | length' 2>/dev/null) || count=0
-        if [[ "$count" -ge "$expected" ]]; then
-            return 0
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_warn "Timed out waiting for $expected windows (have $count)"
-            return 1
-        fi
-    done
+count_windows() {
+    swaymsg -t get_tree 2>/dev/null \
+        | jq '[.. | select(.pid? > 0 and .type? == "con")] | length' 2>/dev/null || echo 0
 }
 
 get_focused() {
