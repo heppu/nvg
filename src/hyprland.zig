@@ -21,11 +21,7 @@ const log = @import("log.zig");
 pub const Hyprland = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Hyprland from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(Hyprland),
     socket_path: [posix.PATH_MAX]u8,
     socket_path_len: usize,
 
@@ -98,22 +94,6 @@ pub const Hyprland = struct {
         return buf[0..total];
     }
 
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *Hyprland = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *Hyprland = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *Hyprland = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
-    }
 };
 
 /// Parse the "pid" field from a Hyprland `j/activewindow` JSON response.

@@ -31,11 +31,7 @@ const default_fifo_path = "/tmp/dwm.fifo";
 pub const Dwm = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Dwm from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(Dwm),
     fifo_path: [posix.PATH_MAX]u8,
     fifo_path_len: usize,
 
@@ -99,22 +95,6 @@ pub const Dwm = struct {
         };
     }
 
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *Dwm = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *Dwm = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *Dwm = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
-    }
 };
 
 // ─── X11 protocol helpers ───

@@ -30,11 +30,7 @@ const IpcHeader = extern struct {
 pub const Sway = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Sway from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(Sway),
     fd: posix.fd_t,
 
     pub fn connect(socket_path: []const u8) !Sway {
@@ -134,22 +130,6 @@ pub const Sway = struct {
         }
     }
 
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
-    }
 };
 
 /// Recursively find the PID of the focused node in the sway tree.

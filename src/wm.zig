@@ -70,6 +70,39 @@ pub const WindowManager = struct {
     }
 };
 
+/// Generate the WindowManager vtable for backend type `T`.
+///
+/// `T` must have a `wm: WindowManager` field as its first field, and three
+/// methods: `getFocusedPid(*T) ?i32`, `moveFocus(*T, Direction) void`, and
+/// `disconnect(*T) void`. Use it as the default for the embedded `wm` field:
+///
+///     pub const Sway = struct {
+///         wm: wm.WindowManager = wm.vtable(Sway),
+///         fd: posix.fd_t,
+///         pub fn getFocusedPid(self: *Sway) ?i32 { ... }
+///         pub fn moveFocus(self: *Sway, dir: Direction) void { ... }
+///         pub fn disconnect(self: *Sway) void { ... }
+///     };
+pub fn vtable(comptime T: type) WindowManager {
+    return .{
+        .getFocusedPidFn = struct {
+            fn f(p: *WindowManager) ?i32 {
+                return @as(*T, @fieldParentPtr("wm", p)).getFocusedPid();
+            }
+        }.f,
+        .moveFocusFn = struct {
+            fn f(p: *WindowManager, dir: Direction) void {
+                @as(*T, @fieldParentPtr("wm", p)).moveFocus(dir);
+            }
+        }.f,
+        .disconnectFn = struct {
+            fn f(p: *WindowManager) void {
+                @as(*T, @fieldParentPtr("wm", p)).disconnect();
+            }
+        }.f,
+    };
+}
+
 /// A connection to a window manager backend.
 ///
 /// Holds the concrete backend struct in a tagged union, avoiding heap

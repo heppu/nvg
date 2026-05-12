@@ -30,11 +30,7 @@ const log = @import("log.zig");
 pub const River = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the River from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(River),
     socket_path: [posix.PATH_MAX]u8,
     socket_path_len: usize,
 
@@ -129,22 +125,6 @@ pub const River = struct {
         wl.processEvents() orelse return;
     }
 
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *River = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *River = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *River = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
-    }
 };
 
 // ─── Minimal Wayland wire protocol client ───
