@@ -9,7 +9,7 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const wm = @import("wm.zig");
 const net = @import("net.zig");
 
@@ -27,23 +27,10 @@ const IpcHeader = extern struct {
     msg_type: u32 align(1),
 };
 
-pub const SwayError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    InvalidHeader,
-    ParseFailed,
-    SocketPathTooLong,
-};
-
 pub const Sway = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Sway from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(Sway),
     fd: posix.fd_t,
 
     pub fn connect(socket_path: []const u8) !Sway {
@@ -51,7 +38,7 @@ pub const Sway = struct {
         const fd = try posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0);
         errdefer posix.close(fd);
         posix.connect(fd, @ptrCast(&addr), @sizeOf(posix.sockaddr.un)) catch {
-            return SwayError.ConnectFailed;
+            return error.ConnectFailed;
         };
         return .{ .fd = fd };
     }
@@ -141,23 +128,6 @@ pub const Sway = struct {
                 remaining -= n;
             }
         }
-    }
-
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *Sway = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
     }
 };
 

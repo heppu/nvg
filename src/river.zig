@@ -21,42 +21,28 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const wm = @import("wm.zig");
 const net = @import("net.zig");
 const process = @import("process.zig");
 const log = @import("log.zig");
 
-pub const RiverError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    ParseFailed,
-    SocketPathTooLong,
-    NoSocketPath,
-    ProtocolError,
-};
-
 pub const River = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the River from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(River),
     socket_path: [posix.PATH_MAX]u8,
     socket_path_len: usize,
 
     /// Build a River backend from the environment.
     /// The Wayland display socket is at $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.
     pub fn connect() !River {
-        const wayland_display = posix.getenv("WAYLAND_DISPLAY") orelse return RiverError.NoSocketPath;
-        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return RiverError.NoSocketPath;
+        const wayland_display = posix.getenv("WAYLAND_DISPLAY") orelse return error.NoSocketPath;
+        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
         var path_buf: [posix.PATH_MAX]u8 = undefined;
         const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ xdg, wayland_display }) catch {
-            return RiverError.SocketPathTooLong;
+            return error.SocketPathTooLong;
         };
 
         var result = River{
@@ -137,23 +123,6 @@ pub const River = struct {
         // Roundtrip to ensure the command is processed
         wl.sendSync() orelse return;
         wl.processEvents() orelse return;
-    }
-
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *River = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *River = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *River = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
     }
 };
 

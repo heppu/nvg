@@ -21,28 +21,17 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const wm = @import("wm.zig");
 const net = @import("net.zig");
 const log = @import("log.zig");
-
-pub const DwmError = error{
-    ConnectFailed,
-    WriteFailed,
-    NoFifoPath,
-    FifoPathTooLong,
-};
 
 const default_fifo_path = "/tmp/dwm.fifo";
 
 pub const Dwm = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Dwm from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(Dwm),
     fifo_path: [posix.PATH_MAX]u8,
     fifo_path_len: usize,
 
@@ -50,7 +39,7 @@ pub const Dwm = struct {
     /// Reads the FIFO path from $DWM_FIFO, defaulting to /tmp/dwm.fifo.
     pub fn connect() !Dwm {
         const path = posix.getenv("DWM_FIFO") orelse default_fifo_path;
-        if (path.len >= posix.PATH_MAX) return DwmError.FifoPathTooLong;
+        if (path.len >= posix.PATH_MAX) return error.FifoPathTooLong;
 
         var result = Dwm{
             .fifo_path = undefined,
@@ -104,23 +93,6 @@ pub const Dwm = struct {
             log.log("dwm: failed to write to fifo", .{});
             return;
         };
-    }
-
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *Dwm = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *Dwm = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *Dwm = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
     }
 };
 

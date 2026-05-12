@@ -13,40 +13,27 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const wm = @import("wm.zig");
 const net = @import("net.zig");
 const log = @import("log.zig");
 
-pub const HyprlandError = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    ParseFailed,
-    SocketPathTooLong,
-    NoSocketPath,
-};
-
 pub const Hyprland = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Hyprland from a *WindowManager.
-    wm: wm.WindowManager = .{
-        .getFocusedPidFn = wmGetFocusedPid,
-        .moveFocusFn = wmMoveFocus,
-        .disconnectFn = wmDisconnect,
-    },
+    wm: wm.WindowManager = wm.vtable(Hyprland),
     socket_path: [posix.PATH_MAX]u8,
     socket_path_len: usize,
 
     /// Build a Hyprland backend from the environment.
     /// Does not open a persistent connection — each IPC call connects anew.
     pub fn connect() !Hyprland {
-        const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return HyprlandError.NoSocketPath;
-        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return HyprlandError.NoSocketPath;
+        const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return error.NoSocketPath;
+        const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
         var path_buf: [posix.PATH_MAX]u8 = undefined;
         const path = std.fmt.bufPrint(&path_buf, "{s}/hypr/{s}/.socket.sock", .{ xdg, his }) catch {
-            return HyprlandError.SocketPathTooLong;
+            return error.SocketPathTooLong;
         };
 
         var result = Hyprland{
@@ -105,23 +92,6 @@ pub const Hyprland = struct {
 
         if (total == 0) return null;
         return buf[0..total];
-    }
-
-    // ─── WindowManager vtable functions ───
-
-    fn wmGetFocusedPid(wm_ptr: *wm.WindowManager) ?i32 {
-        const self: *Hyprland = @fieldParentPtr("wm", wm_ptr);
-        return self.getFocusedPid();
-    }
-
-    fn wmMoveFocus(wm_ptr: *wm.WindowManager, direction: Direction) void {
-        const self: *Hyprland = @fieldParentPtr("wm", wm_ptr);
-        self.moveFocus(direction);
-    }
-
-    fn wmDisconnect(wm_ptr: *wm.WindowManager) void {
-        const self: *Hyprland = @fieldParentPtr("wm", wm_ptr);
-        self.disconnect();
     }
 };
 

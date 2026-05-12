@@ -5,7 +5,7 @@
 /// and bubbles up to the next outer layer (or sway) when a hook is at its edge.
 const std = @import("std");
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const process = @import("process.zig");
 
 pub const max_detected = 8;

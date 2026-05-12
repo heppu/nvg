@@ -12,7 +12,7 @@ const std = @import("std");
 const posix = std.posix;
 
 const Hook = @import("../hook.zig").Hook;
-const Direction = @import("../main.zig").Direction;
+const Direction = @import("../direction.zig").Direction;
 const process = @import("../process.zig");
 const log = @import("../log.zig");
 
