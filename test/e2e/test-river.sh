@@ -134,32 +134,14 @@ start_wm() {
     RIVER_PID=$!
     track_pid "$RIVER_PID"
 
-    # Wait for the Wayland display socket to appear.
-    local timeout=15
-    local elapsed=0
-    while [[ -z "${WAYLAND_DISPLAY:-}" ]]; do
-        local sock
-        sock=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-            -maxdepth 1 -name 'wayland-*' -type s 2>/dev/null \
-            | head -1) || true
-        if [[ -n "$sock" ]]; then
-            export WAYLAND_DISPLAY
-            WAYLAND_DISPLAY=$(basename "$sock")
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for River to start"
-            [[ -f "$RIVER_LOG" ]] && log_warn "river log:" && cat "$RIVER_LOG" >&2
-            return 1
-        fi
-        if ! kill -0 "$RIVER_PID" 2>/dev/null; then
-            log_fail "River process died during startup"
-            [[ -f "$RIVER_LOG" ]] && log_warn "river log:" && cat "$RIVER_LOG" >&2
-            return 1
-        fi
-    done
+    if ! wait_until \
+        '_sock=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" -maxdepth 1 -name "wayland-*" -type s 2>/dev/null | head -1); [[ -n "$_sock" ]] && WAYLAND_DISPLAY=$(basename "$_sock")' \
+        15 "River Wayland socket" "$RIVER_PID"
+    then
+        [[ -f "$RIVER_LOG" ]] && log_warn "river log:" && cat "$RIVER_LOG" >&2
+        return 1
+    fi
+    export WAYLAND_DISPLAY
 
     # Set XDG_CURRENT_DESKTOP for nvg auto-detection
     export XDG_CURRENT_DESKTOP=river
@@ -190,28 +172,9 @@ spawn_window() {
     riverctl spawn "foot --title window-${WINDOW_COUNTER} -e sleep 120" >/dev/null 2>&1
 }
 
-wait_for_windows() {
-    local expected="$1"
-    local timeout="${2:-10}"
-    local elapsed=0
-
-    while true; do
-        local count
-        # Use lswt CSV mode to count toplevels.
-        # Format: 't' = title, one line per toplevel.
-        count=$(lswt --force-protocol zwlr-foreign-toplevel-management-unstable-v1 -c t 2>/dev/null | wc -l) || count=0
-        if [[ "$count" -ge "$expected" ]]; then
-            return 0
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_warn "Timed out waiting for $expected windows (have $count)"
-            log_warn "lswt output:"
-            lswt --force-protocol zwlr-foreign-toplevel-management-unstable-v1 2>&1 || true
-            return 1
-        fi
-    done
+count_windows() {
+    # lswt CSV 't' = title, one line per toplevel.
+    lswt --force-protocol zwlr-foreign-toplevel-management-unstable-v1 -c t 2>/dev/null | wc -l || echo 0
 }
 
 get_focused() {

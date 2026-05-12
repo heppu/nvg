@@ -92,28 +92,10 @@ SWAYCFG
     SWAY_PID=$!
     track_pid "$SWAY_PID"
 
-    local timeout=15
-    local elapsed=0
-    local swaysock=""
-    while [[ -z "$swaysock" ]]; do
-        swaysock=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-            -maxdepth 1 -name 'sway-ipc.*.sock' -type s 2>/dev/null \
-            | head -1) || true
-        if [[ -n "$swaysock" ]]; then
-            export SWAYSOCK="$swaysock"
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for parent Sway to start"
-            return 1
-        fi
-        if ! kill -0 "$SWAY_PID" 2>/dev/null; then
-            log_fail "Parent Sway process died during startup"
-            return 1
-        fi
-    done
+    wait_until \
+        'SWAYSOCK=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" -maxdepth 1 -name "sway-ipc.*.sock" -type s 2>/dev/null | head -1); [[ -n "$SWAYSOCK" ]]' \
+        15 "parent Sway IPC socket" "$SWAY_PID" || return 1
+    export SWAYSOCK
 
     log_info "Parent Sway running (PID=$SWAY_PID, SWAYSOCK=$SWAYSOCK)"
 
@@ -159,34 +141,17 @@ NIRICFG
     NIRI_PID=$!
     track_pid "$NIRI_PID"
 
-    # Wait for the niri IPC socket to appear.
     # Socket format: $XDG_RUNTIME_DIR/niri.<wayland_socket_name>.<pid>.sock
-    local timeout=30
-    elapsed=0
-    while [[ -z "${NIRI_SOCKET:-}" ]]; do
-        local sock
-        sock=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-            -maxdepth 1 -name "niri.*.${NIRI_PID}.sock" -type s 2>/dev/null \
-            | head -1) || true
-        if [[ -n "$sock" ]]; then
-            export NIRI_SOCKET="$sock"
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for niri to start"
-            log_warn "Looking for niri sockets:"
-            find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" -maxdepth 1 -name 'niri*' 2>&1 || true
-            [[ -f "$NIRI_LOG" ]] && log_warn "niri log:" && cat "$NIRI_LOG" >&2
-            return 1
-        fi
-        if ! kill -0 "$NIRI_PID" 2>/dev/null; then
-            log_fail "niri process died during startup"
-            [[ -f "$NIRI_LOG" ]] && log_warn "niri log:" && cat "$NIRI_LOG" >&2
-            return 1
-        fi
-    done
+    if ! wait_until \
+        'NIRI_SOCKET=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" -maxdepth 1 -name "niri.*.${NIRI_PID}.sock" -type s 2>/dev/null | head -1); [[ -n "$NIRI_SOCKET" ]]' \
+        30 "niri IPC socket" "$NIRI_PID"
+    then
+        log_warn "Looking for niri sockets:"
+        find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" -maxdepth 1 -name 'niri*' 2>&1 || true
+        [[ -f "$NIRI_LOG" ]] && log_warn "niri log:" && cat "$NIRI_LOG" >&2
+        return 1
+    fi
+    export NIRI_SOCKET
 
     log_info "niri running (PID=$NIRI_PID, NIRI_SOCKET=$NIRI_SOCKET)"
 }
@@ -202,26 +167,8 @@ spawn_window() {
     niri msg action spawn -- foot -e sleep 120 >/dev/null 2>&1
 }
 
-wait_for_windows() {
-    local expected="$1"
-    local timeout="${2:-10}"
-    local elapsed=0
-
-    while true; do
-        local count
-        count=$(niri msg --json windows 2>/dev/null | jq 'length' 2>/dev/null) || count=0
-        if [[ "$count" -ge "$expected" ]]; then
-            return 0
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_warn "Timed out waiting for $expected windows (have $count)"
-            log_warn "niri windows dump:"
-            niri msg --json windows 2>&1 | jq '.' 2>&1 || true
-            return 1
-        fi
-    done
+count_windows() {
+    niri msg --json windows 2>/dev/null | jq 'length' 2>/dev/null || echo 0
 }
 
 get_focused() {
