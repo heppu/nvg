@@ -216,12 +216,7 @@ const WaylandConn = struct {
     // Whether we've seen the callback.done for our sync
     sync_done: bool,
 
-    fn init(path: []const u8) ?*WaylandConn {
-        // We use a static instance since this is single-threaded and short-lived.
-        const S = struct {
-            var instance: WaylandConn = undefined;
-        };
-
+    fn init(path: []const u8) ?WaylandConn {
         const addr = net.makeUnixAddr(path) catch return null;
         const fd = posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0) catch return null;
         posix.connect(fd, @ptrCast(&addr), @sizeOf(posix.sockaddr.un)) catch {
@@ -229,7 +224,7 @@ const WaylandConn = struct {
             return null;
         };
 
-        S.instance = WaylandConn{
+        return .{
             .fd = fd,
             .next_id = 2,
             .registry_id = 0,
@@ -248,8 +243,6 @@ const WaylandConn = struct {
             .toplevel_count = 0,
             .sync_done = false,
         };
-
-        return &S.instance;
     }
 
     fn deinit(self: *WaylandConn) void {
