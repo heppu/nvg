@@ -31,7 +31,7 @@ pub const River = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the River from a *WindowManager.
     wm: wm.WindowManager = wm.vtable(River),
-    socket_path: [posix.PATH_MAX]u8,
+    socket_path: [net.max_socket_path]u8,
     socket_path_len: usize,
 
     /// Build a River backend from the environment.
@@ -40,16 +40,11 @@ pub const River = struct {
         const wayland_display = posix.getenv("WAYLAND_DISPLAY") orelse return error.NoSocketPath;
         const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
-        var path_buf: [posix.PATH_MAX]u8 = undefined;
-        const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ xdg, wayland_display }) catch {
+        var result: River = .{ .socket_path = undefined, .socket_path_len = 0 };
+        const path = std.fmt.bufPrint(&result.socket_path, "{s}/{s}", .{ xdg, wayland_display }) catch {
             return error.SocketPathTooLong;
         };
-
-        var result = River{
-            .socket_path = undefined,
-            .socket_path_len = path.len,
-        };
-        @memcpy(result.socket_path[0..path.len], path);
+        result.socket_path_len = path.len;
         return result;
     }
 
@@ -216,12 +211,7 @@ const WaylandConn = struct {
     // Whether we've seen the callback.done for our sync
     sync_done: bool,
 
-    fn init(path: []const u8) ?*WaylandConn {
-        // We use a static instance since this is single-threaded and short-lived.
-        const S = struct {
-            var instance: WaylandConn = undefined;
-        };
-
+    fn init(path: []const u8) ?WaylandConn {
         const addr = net.makeUnixAddr(path) catch return null;
         const fd = posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0) catch return null;
         posix.connect(fd, @ptrCast(&addr), @sizeOf(posix.sockaddr.un)) catch {
@@ -229,7 +219,7 @@ const WaylandConn = struct {
             return null;
         };
 
-        S.instance = WaylandConn{
+        return .{
             .fd = fd,
             .next_id = 2,
             .registry_id = 0,
@@ -248,8 +238,6 @@ const WaylandConn = struct {
             .toplevel_count = 0,
             .sync_done = false,
         };
-
-        return &S.instance;
     }
 
     fn deinit(self: *WaylandConn) void {

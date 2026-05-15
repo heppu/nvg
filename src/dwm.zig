@@ -32,14 +32,14 @@ pub const Dwm = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Dwm from a *WindowManager.
     wm: wm.WindowManager = wm.vtable(Dwm),
-    fifo_path: [posix.PATH_MAX]u8,
+    fifo_path: [net.max_socket_path]u8,
     fifo_path_len: usize,
 
     /// Build a Dwm backend from the environment.
     /// Reads the FIFO path from $DWM_FIFO, defaulting to /tmp/dwm.fifo.
     pub fn connect() !Dwm {
         const path = posix.getenv("DWM_FIFO") orelse default_fifo_path;
-        if (path.len >= posix.PATH_MAX) return error.FifoPathTooLong;
+        if (path.len >= net.max_socket_path) return error.FifoPathTooLong;
 
         var result = Dwm{
             .fifo_path = undefined,
