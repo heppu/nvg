@@ -100,6 +100,49 @@ pub fn readFileToBuffer(path: []const u8, buf: []u8) ?[]const u8 {
     return buf[0..total];
 }
 
+/// A target environment variable to extract via readProcEnviron.
+/// `buf` and `len` are written when a matching `KEY=VALUE` pair is found
+/// in /proc/<pid>/environ. `len` is set to 0 when not found (callers
+/// should initialise it that way too if they care about the post-condition).
+pub const EnvSlot = struct {
+    key: []const u8,
+    buf: []u8,
+    len: *usize,
+};
+
+/// Read /proc/<pid>/environ and copy any matching KEY values into the
+/// provided slots. Each slot is filled in-place at most once. Returns
+/// true if any slot was filled.
+///
+/// Used by terminal hooks (kitty, wezterm) to discover their socket /
+/// pane / window-id env vars from the focused process — these env vars
+/// aren't inherited by nvg, only by the terminal's child shells.
+pub fn readProcEnviron(pid: i32, slots: []const EnvSlot) bool {
+    var path_buf: [64]u8 = undefined;
+    const environ_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/environ", .{pid}) catch return false;
+
+    var environ_buf: [8192]u8 = undefined;
+    const content = readFileToBuffer(environ_path, &environ_buf) orelse return false;
+
+    var any_found = false;
+    var it = std.mem.splitScalar(u8, content, 0);
+    while (it.next()) |entry| {
+        if (entry.len == 0) continue;
+        for (slots) |slot| {
+            if (slot.len.* != 0) continue; // already filled
+            if (!std.mem.startsWith(u8, entry, slot.key)) continue;
+            if (entry.len <= slot.key.len or entry[slot.key.len] != '=') continue;
+            const val = entry[slot.key.len + 1 ..];
+            if (val.len == 0 or val.len > slot.buf.len) continue;
+            @memcpy(slot.buf[0..val.len], val);
+            slot.len.* = val.len;
+            any_found = true;
+            break;
+        }
+    }
+    return any_found;
+}
+
 /// Extract a null-terminated (or end-of-slice) string from a buffer.
 pub fn nullTermStr(buf: []const u8) []const u8 {
     if (std.mem.indexOfScalar(u8, buf, 0)) |end| {
@@ -127,4 +170,41 @@ test "readFileToBuffer reads /proc/self/cmdline" {
 test "readFileToBuffer returns null for nonexistent path" {
     var buf: [64]u8 = undefined;
     try std.testing.expectEqual(@as(?[]const u8, null), readFileToBuffer("/nonexistent/path/file", &buf));
+}
+
+test "readProcEnviron returns false for nonexistent pid" {
+    var dst: [16]u8 = undefined;
+    var dst_len: usize = 0;
+    const slots = [_]EnvSlot{.{ .key = "FOO", .buf = &dst, .len = &dst_len }};
+    try std.testing.expect(!readProcEnviron(4194304, &slots));
+    try std.testing.expectEqual(@as(usize, 0), dst_len);
+}
+
+test "readProcEnviron reads /proc/self/environ" {
+    // /proc/self/environ should have at least PATH set in any normal env.
+    var path_buf: [4096]u8 = undefined;
+    var path_len: usize = 0;
+    const slots = [_]EnvSlot{.{ .key = "PATH", .buf = &path_buf, .len = &path_len }};
+    const pid: i32 = @intCast(std.os.linux.getpid());
+    // Don't assert success — some sandboxed envs may not have PATH — just
+    // verify it doesn't crash and that len is consistent with the return.
+    if (readProcEnviron(pid, &slots)) {
+        try std.testing.expect(path_len > 0);
+    } else {
+        try std.testing.expectEqual(@as(usize, 0), path_len);
+    }
+}
+
+test "readProcEnviron skips already-filled slots" {
+    // Build a synthetic /proc/<pid>/environ scenario by calling against
+    // /proc/self with a slot we pre-fill. The function should leave it alone.
+    var dst: [16]u8 = undefined;
+    @memcpy(dst[0..5], "stale");
+    var dst_len: usize = 5;
+    const slots = [_]EnvSlot{.{ .key = "PATH", .buf = &dst, .len = &dst_len }};
+    const pid: i32 = @intCast(std.os.linux.getpid());
+    _ = readProcEnviron(pid, &slots);
+    // dst[0..5] should still be "stale" — slot was already filled.
+    try std.testing.expectEqual(@as(usize, 5), dst_len);
+    try std.testing.expectEqualStrings("stale", dst[0..5]);
 }

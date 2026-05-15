@@ -58,17 +58,7 @@ start_wm() {
     XVFB_PID=$!
     track_pid "$XVFB_PID"
 
-    # Wait for Xvfb to be ready
-    local timeout=10
-    local elapsed=0
-    while ! DISPLAY="$DISPLAY_NUM" xdpyinfo &>/dev/null; do
-        sleep 0.2
-        elapsed=$(echo "$elapsed + 0.2" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for Xvfb"
-            return 1
-        fi
-    done
+    wait_until 'DISPLAY="$DISPLAY_NUM" xdpyinfo' 10 "Xvfb on $DISPLAY_NUM" "$XVFB_PID" || return 1
     log_info "Xvfb ready"
 
     # Clean up any stale FIFO from a previous run and create a fresh one.
@@ -86,25 +76,9 @@ start_wm() {
     DWM_PID=$!
     track_pid "$DWM_PID"
 
-    # Wait for dwm to be ready (check that it's managing the root window)
-    local elapsed=0
-    local timeout=15
-    while true; do
-        if DISPLAY="$DISPLAY_NUM" xdotool getactivewindow &>/dev/null 2>&1 ||
-           DISPLAY="$DISPLAY_NUM" xprop -root _NET_SUPPORTING_WM_CHECK &>/dev/null 2>&1; then
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for dwm to start"
-            return 1
-        fi
-        if ! kill -0 "$DWM_PID" 2>/dev/null; then
-            log_fail "dwm process died during startup"
-            return 1
-        fi
-    done
+    wait_until \
+        'DISPLAY="$DISPLAY_NUM" xdotool getactivewindow || DISPLAY="$DISPLAY_NUM" xprop -root _NET_SUPPORTING_WM_CHECK' \
+        15 "dwm ready" "$DWM_PID" || return 1
 
     export DWM_FIFO="$DWM_FIFO_PATH"
     log_info "dwm running (PID=$DWM_PID, DWM_FIFO=$DWM_FIFO_PATH, DISPLAY=$DISPLAY_NUM)"
@@ -120,26 +94,8 @@ spawn_window() {
     track_pid "$!"
 }
 
-wait_for_windows() {
-    local expected="$1"
-    local timeout="${2:-10}"
-    local elapsed=0
-
-    while true; do
-        local count
-        count=$(DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --name "" 2>/dev/null | wc -l) || count=0
-        if [[ "$count" -ge "$expected" ]]; then
-            return 0
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_warn "Timed out waiting for $expected windows (have $count)"
-            log_warn "xterm processes:"
-            ps aux | grep xterm || true
-            return 1
-        fi
-    done
+count_windows() {
+    DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --name "" 2>/dev/null | wc -l || echo 0
 }
 
 get_focused() {

@@ -91,38 +91,15 @@ HYPRCFG
     HYPR_PID=$!
     track_pid "$HYPR_PID"
 
-    # Wait for Hyprland to set up its IPC socket.
-    # The socket is at $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket.sock
-    local timeout=15
-    local elapsed=0
-    while [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; do
-        # Find the newest Hyprland socket directory
-        local his
-        his=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr" \
-            -maxdepth 2 -name '.socket.sock' -type s 2>/dev/null \
-            | head -1) || true
-        if [[ -n "$his" ]]; then
-            # Extract the instance signature from the path
-            # Path: $XDG_RUNTIME_DIR/hypr/<signature>/.socket.sock
-            local sig_dir
-            sig_dir=$(dirname "$his")
-            export HYPRLAND_INSTANCE_SIGNATURE
-            HYPRLAND_INSTANCE_SIGNATURE=$(basename "$sig_dir")
-            break
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for Hyprland to start"
-            [[ -f "$HYPR_LOG" ]] && log_warn "Hyprland log:" && cat "$HYPR_LOG" >&2
-            return 1
-        fi
-        if ! kill -0 "$HYPR_PID" 2>/dev/null; then
-            log_fail "Hyprland process died during startup"
-            [[ -f "$HYPR_LOG" ]] && log_warn "Hyprland log:" && cat "$HYPR_LOG" >&2
-            return 1
-        fi
-    done
+    # Socket is at $XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket.sock
+    if ! wait_until \
+        '_his=$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr" -maxdepth 2 -name ".socket.sock" -type s 2>/dev/null | head -1); [[ -n "$_his" ]] && HYPRLAND_INSTANCE_SIGNATURE=$(basename "$(dirname "$_his")")' \
+        15 "Hyprland IPC socket" "$HYPR_PID"
+    then
+        [[ -f "$HYPR_LOG" ]] && log_warn "Hyprland log:" && cat "$HYPR_LOG" >&2
+        return 1
+    fi
+    export HYPRLAND_INSTANCE_SIGNATURE
 
     log_info "Hyprland running (PID=$HYPR_PID, HYPRLAND_INSTANCE_SIGNATURE=$HYPRLAND_INSTANCE_SIGNATURE)"
 }
@@ -136,26 +113,8 @@ spawn_window() {
     hyprctl dispatch exec -- foot -e sleep 120 >/dev/null 2>&1
 }
 
-wait_for_windows() {
-    local expected="$1"
-    local timeout="${2:-10}"
-    local elapsed=0
-
-    while true; do
-        local count
-        count=$(hyprctl clients -j 2>/dev/null | jq 'length' 2>/dev/null) || count=0
-        if [[ "$count" -ge "$expected" ]]; then
-            return 0
-        fi
-        sleep 0.3
-        elapsed=$(echo "$elapsed + 0.3" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_warn "Timed out waiting for $expected windows (have $count)"
-            log_warn "hyprctl clients dump:"
-            hyprctl clients -j 2>&1 | jq '.' 2>&1 || true
-            return 1
-        fi
-    done
+count_windows() {
+    hyprctl clients -j 2>/dev/null | jq 'length' 2>/dev/null || echo 0
 }
 
 get_focused() {

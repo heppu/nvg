@@ -9,7 +9,7 @@
 const std = @import("std");
 const posix = std.posix;
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const Sway = @import("sway.zig").Sway;
 const Hyprland = @import("hyprland.zig").Hyprland;
 const Niri = @import("niri.zig").Niri;
@@ -18,14 +18,8 @@ const Dwm = @import("dwm.zig").Dwm;
 const log = @import("log.zig");
 
 pub const Error = error{
-    ConnectFailed,
-    WriteFailed,
-    ReadFailed,
-    InvalidHeader,
-    ParseFailed,
-    SocketPathTooLong,
     NoWmDetected,
-    UnknownBackend,
+    ConnectFailed,
 };
 
 /// A window manager backend identifier.
@@ -75,6 +69,51 @@ pub const WindowManager = struct {
         self.disconnectFn(self);
     }
 };
+
+/// Generate the WindowManager vtable for backend type `T`.
+///
+/// `T` must have a `wm: WindowManager` field and three methods:
+/// `getFocusedPid(*T) ?i32`, `moveFocus(*T, Direction) void`, and
+/// `disconnect(*T) void`. Use it as the default for the embedded `wm` field:
+///
+///     pub const Sway = struct {
+///         wm: wm.WindowManager = wm.vtable(Sway),
+///         fd: posix.fd_t,
+///         pub fn getFocusedPid(self: *Sway) ?i32 { ... }
+///         pub fn moveFocus(self: *Sway, dir: Direction) void { ... }
+///         pub fn disconnect(self: *Sway) void { ... }
+///     };
+pub fn vtable(comptime T: type) WindowManager {
+    comptime {
+        if (!@hasField(T, "wm"))
+            @compileError(@typeName(T) ++ ": vtable requires a 'wm' field");
+        if (@FieldType(T, "wm") != WindowManager)
+            @compileError(@typeName(T) ++ ".wm must be of type WindowManager");
+        if (!@hasDecl(T, "getFocusedPid"))
+            @compileError(@typeName(T) ++ ": vtable requires a getFocusedPid method");
+        if (!@hasDecl(T, "moveFocus"))
+            @compileError(@typeName(T) ++ ": vtable requires a moveFocus method");
+        if (!@hasDecl(T, "disconnect"))
+            @compileError(@typeName(T) ++ ": vtable requires a disconnect method");
+    }
+    return .{
+        .getFocusedPidFn = struct {
+            fn f(p: *WindowManager) ?i32 {
+                return @as(*T, @fieldParentPtr("wm", p)).getFocusedPid();
+            }
+        }.f,
+        .moveFocusFn = struct {
+            fn f(p: *WindowManager, dir: Direction) void {
+                @as(*T, @fieldParentPtr("wm", p)).moveFocus(dir);
+            }
+        }.f,
+        .disconnectFn = struct {
+            fn f(p: *WindowManager) void {
+                @as(*T, @fieldParentPtr("wm", p)).disconnect();
+            }
+        }.f,
+    };
+}
 
 /// A connection to a window manager backend.
 ///

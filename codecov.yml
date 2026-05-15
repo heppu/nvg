@@ -9,23 +9,51 @@ coverage:
         target: 50%
 
 flag_management:
+  # Per-WM e2e flags get project-coverage gating only (so we still track how
+  # each WM e2e exercises shared code). Per-flag *patch* coverage is removed:
+  # a single WM's e2e can only execute its own backend, so a cross-cutting
+  # refactor (touching every WM file) can never satisfy a 50% patch threshold
+  # for every flag. The global `codecov/patch` and `codecov/patch/unit` checks
+  # still gate overall patch coverage.
   default_rules:
     statuses:
       - type: project
         target: auto
         threshold: 5%
-      - type: patch
-        target: 50%
   individual_flags:
     - name: unit
       paths:
         - src/
+      statuses:
+        - type: project
+          target: auto
+          threshold: 5%
+        - type: patch
+          target: 50%
     - name: sway
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: i3
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: hyprland
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: niri
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: dwm
+      paths:
+        - src/
+        - "!src/hooks/"
     - name: river
+      paths:
+        - src/
+        - "!src/hooks/"
 
 ignore:
   - "build.zig"

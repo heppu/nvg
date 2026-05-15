@@ -2,6 +2,12 @@
 const std = @import("std");
 const posix = std.posix;
 
+/// Maximum Unix socket path length we store in backend structs. The Linux
+/// kernel's `sockaddr_un.sun_path` is 108 bytes; this is the practical
+/// ceiling. We pick 256 to leave room for unusual XDG_RUNTIME_DIR setups
+/// without paying PATH_MAX (4096 B) per backend struct.
+pub const max_socket_path = 256;
+
 pub fn makeUnixAddr(path: []const u8) !posix.sockaddr.un {
     var addr: posix.sockaddr.un = .{ .family = posix.AF.UNIX, .path = undefined };
     @memset(&addr.path, 0);

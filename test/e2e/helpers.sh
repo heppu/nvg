@@ -167,29 +167,64 @@ assert_focus_unchanged() {
 
 # ─── Utilities ───
 
+# wait_until CHECK_FN TIMEOUT_SEC LABEL [WATCH_PID]
+#   Polls CHECK_FN every 200ms until it exits 0, or until TIMEOUT_SEC seconds
+#   pass. LABEL is used in log messages. If WATCH_PID is given, the loop also
+#   fails fast when that process dies. CHECK_FN may be any command (function
+#   name, `[[ ... ]]`, etc.) — quote it as you would for `eval`.
+#
+# Examples:
+#   wait_until '[[ -S "$sock" ]]' 15 "sway IPC socket"
+#   wait_until 'kill -0 "$PID" 2>/dev/null && my_check' 10 "WM ready" "$PID"
+wait_until() {
+    local check="$1"
+    local timeout="$2"
+    local label="$3"
+    local watch_pid="${4:-}"
+
+    local ticks=0
+    local max_ticks=$((timeout * 5))   # 200ms per tick
+
+    while ! eval "$check" >/dev/null 2>&1; do
+        if [[ -n "$watch_pid" ]] && ! kill -0 "$watch_pid" 2>/dev/null; then
+            log_fail "$label: watched process $watch_pid died"
+            return 1
+        fi
+        ticks=$((ticks + 1))
+        if (( ticks >= max_ticks )); then
+            log_fail "Timed out waiting for $label (${timeout}s)"
+            return 1
+        fi
+        sleep 0.2
+    done
+    return 0
+}
+
 # wait_for_socket PATH [TIMEOUT_SEC]
 #   Polls until a Unix socket exists at PATH, or times out.
 wait_for_socket() {
     local sock_path="$1"
     local timeout="${2:-10}"
-    local elapsed=0
-
-    log_info "Waiting for socket: $sock_path (timeout: ${timeout}s)"
-    while [[ ! -S "$sock_path" ]]; do
-        sleep 0.2
-        elapsed=$(echo "$elapsed + 0.2" | bc)
-        if (( $(echo "$elapsed >= $timeout" | bc -l) )); then
-            log_fail "Timed out waiting for socket: $sock_path"
-            return 1
-        fi
-    done
-    log_info "Socket ready (${elapsed}s)"
+    wait_until "[[ -S \"$sock_path\" ]]" "$timeout" "socket $sock_path"
 }
 
 # track_pid PID
 #   Adds a PID to the cleanup list.
 track_pid() {
     CLEANUP_PIDS+=("$1")
+}
+
+# wait_for_windows N [TIMEOUT_SEC]
+#   Polls until count_windows (adapter-defined) reports >= N, or times out.
+#   Adapters must implement count_windows() to print a non-negative integer.
+wait_for_windows() {
+    local expected="$1"
+    local timeout="${2:-10}"
+    if wait_until '[[ "$(count_windows)" -ge '"$expected"' ]]' "$timeout" "$expected windows"; then
+        return 0
+    fi
+    log_warn "have $(count_windows) window(s); expected $expected"
+    return 1
 }
 
 # cleanup
@@ -313,15 +348,8 @@ run_tests() {
     sleep 0.5
 
     # Wait until the WM has actually focused the new window.
-    local _focus_wait=0
-    while [[ -z "$(get_focused)" ]]; do
-        sleep 0.2
-        _focus_wait=$(echo "$_focus_wait + 0.2" | bc)
-        if (( $(echo "$_focus_wait >= 5" | bc -l) )); then
-            log_warn "Window spawned but never received focus"
-            break
-        fi
-    done
+    wait_until '[[ -n "$(get_focused)" ]]' 5 "first window focus" || \
+        log_warn "Window spawned but never received focus"
 
     FOCUS_BEFORE=$(get_focused)
     run_test "nvg right (single window)" 0 run_nvg right

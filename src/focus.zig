@@ -12,7 +12,7 @@ const hook_mod = @import("hook.zig");
 const wm_mod = @import("wm.zig");
 const log = @import("log.zig");
 
-const Direction = @import("main.zig").Direction;
+const Direction = @import("direction.zig").Direction;
 const Hook = hook_mod.Hook;
 const DetectedList = hook_mod.DetectedList;
 const WindowManager = wm_mod.WindowManager;

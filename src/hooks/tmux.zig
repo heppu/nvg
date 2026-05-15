@@ -11,7 +11,7 @@ const posix = std.posix;
 
 const Hook = @import("../hook.zig").Hook;
 const DetectedList = @import("../hook.zig").DetectedList;
-const Direction = @import("../main.zig").Direction;
+const Direction = @import("../direction.zig").Direction;
 const process = @import("../process.zig");
 const log = @import("../log.zig");
 
