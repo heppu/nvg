@@ -42,18 +42,46 @@ fn containsKitty(s: []const u8) bool {
 }
 
 /// Check if the active Kitty window can move focus in the given direction.
-/// Runs `kitten @ ls` to get the full window layout as JSON, finds the
-/// focused window, and checks if there's a neighbor in the requested direction.
 /// Returns true if movement is possible, false if at edge, null on error.
 fn canMove(pid: i32, dir: Direction, _: u32) ?bool {
     const env = resolveEnv(pid) orelse return null;
+    return canMoveResolved(&env, dir);
+}
+
+/// Move Kitty window focus one step in the given direction.
+fn moveFocus(pid: i32, dir: Direction, _: u32) void {
+    const env = resolveEnv(pid) orelse return;
+    moveFocusResolved(&env, dir);
+}
+
+/// Move Kitty focus to the edge window in the given direction.
+/// Repeatedly activates neighboring window until at edge.
+///
+/// Kitty's JSON layout doesn't expose enough info to predict the edge
+/// distance from one query, so we loop. But we resolve the env (which
+/// reads /proc/<pid>/environ) only once instead of 2N times.
+fn moveToEdge(pid: i32, dir: Direction, _: u32) void {
+    const env = resolveEnv(pid) orelse return;
+    const max_moves = 50; // Safety limit
+
+    var i: u32 = 0;
+    while (i < max_moves) : (i += 1) {
+        const can = canMoveResolved(&env, dir) orelse break;
+        if (!can) break;
+        moveFocusResolved(&env, dir);
+    }
+
+    log.log("kitty moveToEdge {s}: moved {d} windows", .{ directionStr(dir), i });
+}
+
+// ─── Resolved-env entry points (no /proc reads per call) ───
+
+/// `canMove` with a pre-resolved env. Forks `kitten @ ls` and parses
+/// the response.
+fn canMoveResolved(env: *const KittyEnv, dir: Direction) ?bool {
     const socket = env.socketPath() orelse return null;
-    const window_id_str = env.windowId();
+    const window_id = std.fmt.parseInt(i64, env.windowId(), 10) catch return null;
 
-    // Parse the target window ID
-    const window_id = std.fmt.parseInt(i64, window_id_str, 10) catch return null;
-
-    // Run kitten @ ls to get window layout
     const result = std.process.Child.run(.{
         .allocator = std.heap.page_allocator,
         .argv = &.{ "kitten", "@", "ls", "--to", socket },
@@ -64,7 +92,6 @@ fn canMove(pid: i32, dir: Direction, _: u32) ?bool {
 
     if (result.term != .Exited or result.term.Exited != 0) return null;
 
-    // Parse JSON and check for neighbor
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
@@ -79,9 +106,8 @@ fn canMove(pid: i32, dir: Direction, _: u32) ?bool {
     return hasNeighbor(parsed.value, window_id, dir);
 }
 
-/// Move Kitty window focus one step in the given direction.
-fn moveFocus(pid: i32, dir: Direction, _: u32) void {
-    const env = resolveEnv(pid) orelse return;
+/// `moveFocus` with a pre-resolved env. Forks `kitten @ action`.
+fn moveFocusResolved(env: *const KittyEnv, dir: Direction) void {
     const socket = env.socketPath() orelse return;
     const dir_str = directionStr(dir);
 
@@ -94,21 +120,6 @@ fn moveFocus(pid: i32, dir: Direction, _: u32) void {
     std.heap.page_allocator.free(result.stderr);
 
     log.log("kitty neighboring_window {s}", .{dir_str});
-}
-
-/// Move Kitty focus to the edge window in the given direction.
-/// Repeatedly activates neighboring window until at edge.
-fn moveToEdge(pid: i32, dir: Direction, timeout_ms: u32) void {
-    const max_moves = 50; // Safety limit
-
-    var i: u32 = 0;
-    while (i < max_moves) : (i += 1) {
-        const can = canMove(pid, dir, timeout_ms) orelse break;
-        if (!can) break;
-        moveFocus(pid, dir, timeout_ms);
-    }
-
-    log.log("kitty moveToEdge {s}: moved {d} windows", .{ directionStr(dir), i });
 }
 
 // ─── JSON neighbor detection ───
