@@ -31,7 +31,7 @@ pub const River = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the River from a *WindowManager.
     wm: wm.WindowManager = wm.vtable(River),
-    socket_path: [posix.PATH_MAX]u8,
+    socket_path: [net.max_socket_path]u8,
     socket_path_len: usize,
 
     /// Build a River backend from the environment.
@@ -40,16 +40,11 @@ pub const River = struct {
         const wayland_display = posix.getenv("WAYLAND_DISPLAY") orelse return error.NoSocketPath;
         const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
-        var path_buf: [posix.PATH_MAX]u8 = undefined;
-        const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ xdg, wayland_display }) catch {
+        var result: River = .{ .socket_path = undefined, .socket_path_len = 0 };
+        const path = std.fmt.bufPrint(&result.socket_path, "{s}/{s}", .{ xdg, wayland_display }) catch {
             return error.SocketPathTooLong;
         };
-
-        var result = River{
-            .socket_path = undefined,
-            .socket_path_len = path.len,
-        };
-        @memcpy(result.socket_path[0..path.len], path);
+        result.socket_path_len = path.len;
         return result;
     }
 

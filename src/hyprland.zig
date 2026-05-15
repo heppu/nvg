@@ -22,7 +22,7 @@ pub const Hyprland = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Hyprland from a *WindowManager.
     wm: wm.WindowManager = wm.vtable(Hyprland),
-    socket_path: [posix.PATH_MAX]u8,
+    socket_path: [net.max_socket_path]u8,
     socket_path_len: usize,
 
     /// Build a Hyprland backend from the environment.
@@ -31,16 +31,11 @@ pub const Hyprland = struct {
         const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return error.NoSocketPath;
         const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoSocketPath;
 
-        var path_buf: [posix.PATH_MAX]u8 = undefined;
-        const path = std.fmt.bufPrint(&path_buf, "{s}/hypr/{s}/.socket.sock", .{ xdg, his }) catch {
+        var result: Hyprland = .{ .socket_path = undefined, .socket_path_len = 0 };
+        const path = std.fmt.bufPrint(&result.socket_path, "{s}/hypr/{s}/.socket.sock", .{ xdg, his }) catch {
             return error.SocketPathTooLong;
         };
-
-        var result = Hyprland{
-            .socket_path = undefined,
-            .socket_path_len = path.len,
-        };
-        @memcpy(result.socket_path[0..path.len], path);
+        result.socket_path_len = path.len;
         return result;
     }
 

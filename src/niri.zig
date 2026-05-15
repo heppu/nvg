@@ -25,14 +25,14 @@ pub const Niri = struct {
     /// WindowManager vtable — must be the first field so that
     /// @fieldParentPtr can recover the Niri from a *WindowManager.
     wm: wm.WindowManager = wm.vtable(Niri),
-    socket_path: [posix.PATH_MAX]u8,
+    socket_path: [net.max_socket_path]u8,
     socket_path_len: usize,
 
     /// Build a Niri backend from the environment.
     /// Does not open a persistent connection — each IPC call connects anew.
     pub fn connect() !Niri {
         const path = posix.getenv("NIRI_SOCKET") orelse return error.NoSocketPath;
-        if (path.len >= posix.PATH_MAX) return error.SocketPathTooLong;
+        if (path.len >= net.max_socket_path) return error.SocketPathTooLong;
 
         var result = Niri{
             .socket_path = undefined,
