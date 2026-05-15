@@ -18,10 +18,10 @@ Seamless navigation between your window manager and applications without plugins
 | i3             | Full support (same IPC protocol as Sway) |
 | Hyprland       | Full support |
 | Niri           | Full support |
+| River          | Full support |
 | dwm            | Full support ([dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/) required) |
-| awesome        | Planned |
 
-The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`, `DWM_FIFO`), or can be specified explicitly with `--wm`.
+The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`, `XDG_CURRENT_DESKTOP=river`, `DWM_FIFO`), or can be specified explicitly with `--wm`.
 
 ## Supported Applications
 
@@ -29,7 +29,8 @@ The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3S
 |-------------|--------|
 | Neovim      | Full support |
 | tmux        | Full support |
-| VS Code     | Detection only (navigation not yet implemented) |
+| WezTerm     | Full support |
+| Kitty       | Full support (requires `allow_remote_control yes` in `kitty.conf`) |
 
 ## Installation
 
@@ -68,8 +69,8 @@ bindsym $mod+l exec nvg right
 ```
 
 That's it. nvg automatically detects the running window manager and
-navigates through Neovim, tmux, and VS Code splits/panes before moving to the
-next window.
+navigates through Neovim, tmux, WezTerm, and Kitty splits/panes before
+moving to the next window.
 
 To explicitly select a window manager backend:
 
@@ -107,9 +108,23 @@ binds {
 }
 ```
 
+### River
+
+In your `~/.config/river/init`, replace the default `focus-view` bindings:
+
+```sh
+riverctl map normal Super H spawn 'nvg left'
+riverctl map normal Super J spawn 'nvg down'
+riverctl map normal Super K spawn 'nvg up'
+riverctl map normal Super L spawn 'nvg right'
+```
+
+River is detected via `XDG_CURRENT_DESKTOP=river` (which `river` sets
+for itself) together with `WAYLAND_DISPLAY`.
+
 ### dwm
 
-Requires the [dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/) and `xdotool` installed.
+Requires the [dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/).
 
 Set the `DWM_FIFO` environment variable to enable auto-detection, or use `--wm dwm`:
 
@@ -171,9 +186,13 @@ static const Key keys[] = {
 | `I3SOCK` | Path to i3 IPC socket (set automatically by i3) |
 | `HYPRLAND_INSTANCE_SIGNATURE` | Hyprland instance ID (set automatically by Hyprland) |
 | `NIRI_SOCKET` | Niri IPC socket path (set automatically by niri) |
+| `XDG_CURRENT_DESKTOP` | Used to auto-detect River (river sets this to `river`) |
+| `WAYLAND_DISPLAY` | Wayland display socket name, used by the River backend |
 | `DWM_FIFO` | Path to dwm FIFO for dwmfifo patch (default: `/tmp/dwm.fifo`) |
-| `XDG_RUNTIME_DIR` | Used to locate Hyprland and Neovim sockets |
+| `XDG_RUNTIME_DIR` | Used to locate Hyprland, Niri, River and Neovim sockets |
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
+| `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` | Read from the focused process's `/proc/<pid>/environ` to drive the WezTerm hook |
+| `KITTY_LISTEN_ON` / `KITTY_WINDOW_ID` | Read from the focused process's `/proc/<pid>/environ` to drive the Kitty hook |
 
 ### CLI Options
 
@@ -181,11 +200,11 @@ static const Key keys[] = {
 Usage: nvg <left|right|up|down> [options]
 
 Options:
-  -t, --timeout <ms>      IPC timeout in milliseconds (default: 100)
+  -t, --timeout <ms>       IPC timeout in milliseconds (default: 100)
   --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
-                            Available: nvim, tmux, vscode
-  --wm <name>             Window manager backend (default: auto-detect)
-                             Available: sway, i3, hyprland, niri, dwm
+                             Available: nvim, tmux, wezterm, kitty
+  --wm <name>              Window manager backend (default: auto-detect)
+                             Available: sway, i3, hyprland, niri, river, dwm
   -v, --version            Print version
   -h, --help               Print this help
 ```
@@ -237,7 +256,7 @@ Create a new test script that implements the adapter interface and calls `run_te
 | `start_wm` | Start the WM in headless mode |
 | `wm_cleanup` | Clean up WM resources, call `cleanup` at the end |
 | `spawn_window` | Spawn a window (terminal) in the WM |
-| `wait_for_windows N` | Wait until N windows are visible |
+| `count_windows` | Print the current number of visible windows (helpers polls this for `wait_for_windows`) |
 | `get_focused` | Return an identifier for the focused window |
 | `wm_focus DIRECTION` | Move focus using the WM's native command |
 | `run_nvg DIRECTION` | Invoke `$NVG_BIN` with the correct env/args |
