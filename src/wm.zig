@@ -72,8 +72,8 @@ pub const WindowManager = struct {
 
 /// Generate the WindowManager vtable for backend type `T`.
 ///
-/// `T` must have a `wm: WindowManager` field as its first field, and three
-/// methods: `getFocusedPid(*T) ?i32`, `moveFocus(*T, Direction) void`, and
+/// `T` must have a `wm: WindowManager` field and three methods:
+/// `getFocusedPid(*T) ?i32`, `moveFocus(*T, Direction) void`, and
 /// `disconnect(*T) void`. Use it as the default for the embedded `wm` field:
 ///
 ///     pub const Sway = struct {
@@ -84,6 +84,18 @@ pub const WindowManager = struct {
 ///         pub fn disconnect(self: *Sway) void { ... }
 ///     };
 pub fn vtable(comptime T: type) WindowManager {
+    comptime {
+        if (!@hasField(T, "wm"))
+            @compileError(@typeName(T) ++ ": vtable requires a 'wm' field");
+        if (@FieldType(T, "wm") != WindowManager)
+            @compileError(@typeName(T) ++ ".wm must be of type WindowManager");
+        if (!@hasDecl(T, "getFocusedPid"))
+            @compileError(@typeName(T) ++ ": vtable requires a getFocusedPid method");
+        if (!@hasDecl(T, "moveFocus"))
+            @compileError(@typeName(T) ++ ": vtable requires a moveFocus method");
+        if (!@hasDecl(T, "disconnect"))
+            @compileError(@typeName(T) ++ ": vtable requires a disconnect method");
+    }
     return .{
         .getFocusedPidFn = struct {
             fn f(p: *WindowManager) ?i32 {
