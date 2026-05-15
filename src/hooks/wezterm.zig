@@ -179,38 +179,13 @@ fn resolveEnv(pid: i32) ?WeztermEnv {
 /// Try to read WEZTERM_PANE and WEZTERM_UNIX_SOCKET from /proc/<pid>/environ.
 /// Returns true if WEZTERM_PANE was found.
 fn readEnvFromProc(pid: i32, env: *WeztermEnv) bool {
-    var path_buf: [64]u8 = undefined;
-    const environ_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/environ", .{pid}) catch return false;
-
-    var environ_buf: [8192]u8 = undefined;
-    const content = process.readFileToBuffer(environ_path, &environ_buf) orelse return false;
-
-    var found_pane = false;
-
-    // /proc/<pid>/environ is null-separated KEY=VALUE pairs
-    var it = std.mem.splitScalar(u8, content, 0);
-    while (it.next()) |entry| {
-        if (entry.len == 0) continue;
-
-        if (std.mem.startsWith(u8, entry, "WEZTERM_PANE=")) {
-            const val = entry["WEZTERM_PANE=".len..];
-            if (val.len > 0 and val.len <= env.pane_id_buf.len) {
-                @memcpy(env.pane_id_buf[0..val.len], val);
-                env.pane_id_len = val.len;
-                found_pane = true;
-                log.log("wezterm: found WEZTERM_PANE={s} in /proc/{d}/environ", .{ val, pid });
-            }
-        } else if (std.mem.startsWith(u8, entry, "WEZTERM_UNIX_SOCKET=")) {
-            const val = entry["WEZTERM_UNIX_SOCKET=".len..];
-            if (val.len <= env.socket_buf.len) {
-                @memcpy(env.socket_buf[0..val.len], val);
-                env.socket_len = val.len;
-                log.log("wezterm: found WEZTERM_UNIX_SOCKET={s} in /proc/{d}/environ", .{ val, pid });
-            }
-        }
-    }
-
-    return found_pane;
+    var socket_len: usize = 0;
+    const found = process.readProcEnviron(pid, &.{
+        .{ .key = "WEZTERM_PANE", .buf = &env.pane_id_buf, .len = &env.pane_id_len },
+        .{ .key = "WEZTERM_UNIX_SOCKET", .buf = &env.socket_buf, .len = &socket_len },
+    });
+    if (socket_len > 0) env.socket_len = socket_len;
+    return found and env.pane_id_len > 0;
 }
 
 /// Fork/exec the wezterm CLI and capture stdout into the provided buffer.
