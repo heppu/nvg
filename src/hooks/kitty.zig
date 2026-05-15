@@ -262,38 +262,11 @@ fn resolveEnv(pid: i32) ?KittyEnv {
 /// Try to read KITTY_LISTEN_ON and KITTY_WINDOW_ID from /proc/<pid>/environ.
 /// Returns true if KITTY_LISTEN_ON was found.
 fn readEnvFromProc(pid: i32, env: *KittyEnv) bool {
-    var path_buf: [64]u8 = undefined;
-    const environ_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/environ", .{pid}) catch return false;
-
-    var environ_buf: [8192]u8 = undefined;
-    const content = process.readFileToBuffer(environ_path, &environ_buf) orelse return false;
-
-    var found_socket = false;
-
-    // /proc/<pid>/environ is null-separated KEY=VALUE pairs
-    var it = std.mem.splitScalar(u8, content, 0);
-    while (it.next()) |entry| {
-        if (entry.len == 0) continue;
-
-        if (std.mem.startsWith(u8, entry, "KITTY_LISTEN_ON=")) {
-            const val = entry["KITTY_LISTEN_ON=".len..];
-            if (val.len > 0 and val.len <= env.socket_buf.len) {
-                @memcpy(env.socket_buf[0..val.len], val);
-                env.socket_len = val.len;
-                found_socket = true;
-                log.log("kitty: found KITTY_LISTEN_ON={s} in /proc/{d}/environ", .{ val, pid });
-            }
-        } else if (std.mem.startsWith(u8, entry, "KITTY_WINDOW_ID=")) {
-            const val = entry["KITTY_WINDOW_ID=".len..];
-            if (val.len > 0 and val.len <= env.window_id_buf.len) {
-                @memcpy(env.window_id_buf[0..val.len], val);
-                env.window_id_len = val.len;
-                log.log("kitty: found KITTY_WINDOW_ID={s} in /proc/{d}/environ", .{ val, pid });
-            }
-        }
-    }
-
-    return found_socket;
+    _ = process.readProcEnviron(pid, &.{
+        .{ .key = "KITTY_LISTEN_ON", .buf = &env.socket_buf, .len = &env.socket_len },
+        .{ .key = "KITTY_WINDOW_ID", .buf = &env.window_id_buf, .len = &env.window_id_len },
+    });
+    return env.socket_len > 0;
 }
 
 // ─── Tests ───
