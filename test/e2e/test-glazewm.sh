@@ -143,26 +143,29 @@ GLAZECFG
     GLAZE_PID=$!
     track_pid "$GLAZE_PID"
 
-    # Wait until the IPC server is accepting connections. Do NOT watch the
-    # launcher PID — on Windows `glazewm start` may detach into a child,
-    # leaving the launcher process exited even though the WM is up. We rely
-    # solely on the IPC probe to decide whether GlazeWM is alive.
+    # Probe the IPC server via a direct TCP connect (bash `/dev/tcp`) — much
+    # faster and more reliable than spawning `glazewm query`, which can hang
+    # for seconds per call when the WM is not yet ready.
+    # Do NOT watch the launcher PID: on Windows `glazewm start` may detach
+    # into a child, leaving the launcher exited even though the WM is up.
     if ! wait_until \
-        '"$GLAZE_BIN" query focused >/dev/null 2>&1' \
-        30 "GlazeWM IPC"
+        '(exec 3<>/dev/tcp/127.0.0.1/6123) 2>/dev/null && exec 3<&-' \
+        30 "GlazeWM IPC port 6123"
     then
-        log_warn "GlazeWM did not respond on the IPC socket"
+        log_warn "GlazeWM did not bind 127.0.0.1:6123 within 30s"
         if [[ -f "$GLAZE_LOG" ]]; then
             log_warn "GlazeWM log ($GLAZE_LOG):"
             cat "$GLAZE_LOG" >&2 || true
         else
             log_warn "no log file at $GLAZE_LOG"
         fi
-        # Dump anything resembling a glazewm process so we can see if it
-        # detached but is hung.
         if command -v tasklist >/dev/null 2>&1; then
             log_warn "running glazewm-like processes:"
             tasklist 2>/dev/null | grep -i glaze >&2 || log_warn "  (none)"
+        fi
+        if command -v netstat >/dev/null 2>&1; then
+            log_warn "TCP listeners on 6123:"
+            netstat -ano 2>/dev/null | grep -E '6123|LISTENING' | head -10 >&2 || true
         fi
         return 1
     fi
