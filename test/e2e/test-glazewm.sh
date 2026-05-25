@@ -34,9 +34,15 @@ install_deps() {
 
     # GitHub Actions exports these as Windows env vars; treat missing as empty
     # so `set -u` doesn't fire when the script runs outside a real Windows
-    # user session.
+    # user session. Normalise Windows-style paths to MSYS/MINGW form
+    # (`C:\Program Files` → `/c/Program Files`) — bash exec fails with
+    # `Permission denied` on mixed-slash paths.
     local localappdata="${LOCALAPPDATA:-}"
-    local progfiles="${PROGRAMFILES:-${ProgramFiles:-/c/Program Files}}"
+    local progfiles="${PROGRAMFILES:-${ProgramFiles:-C:/Program Files}}"
+    if command -v cygpath >/dev/null 2>&1; then
+        [[ -n "$localappdata" ]] && localappdata="$(cygpath -u "$localappdata")"
+        progfiles="$(cygpath -u "$progfiles")"
+    fi
 
     # Skip silently if glazewm is already on PATH.
     if ! command -v "$GLAZE_BIN" >/dev/null 2>&1; then
@@ -55,10 +61,15 @@ install_deps() {
             fi
 
             if ! command -v "$GLAZE_BIN" >/dev/null 2>&1; then
+                # Prefer the `cli/` shim — the top-level glazewm.exe carries
+                # a manifest that asks for UAC elevation; the CLI shim
+                # next to it does not.
                 for candidate in \
-                    "${localappdata}/Programs/glzr.io/GlazeWM/glazewm.exe" \
+                    "${progfiles}/glzr.io/GlazeWM/cli/glazewm.exe" \
+                    "${localappdata}/Programs/glzr.io/GlazeWM/cli/glazewm.exe" \
+                    "${localappdata}/Microsoft/WinGet/Links/glazewm.exe" \
                     "${progfiles}/glzr.io/GlazeWM/glazewm.exe" \
-                    "${localappdata}/Microsoft/WinGet/Links/glazewm.exe"
+                    "${localappdata}/Programs/glzr.io/GlazeWM/glazewm.exe"
                 do
                     if [[ -n "$candidate" && -x "$candidate" ]]; then
                         GLAZE_BIN="$candidate"
