@@ -124,21 +124,39 @@ binding_modes: []
 keybindings: []
 GLAZECFG
 
-    log_info "Starting GlazeWM..."
-    "$GLAZE_BIN" start >/tmp/glazewm.log 2>&1 &
+    # Log to a path we know exists (RUNNER_TEMP on GH, $HOME otherwise).
+    GLAZE_LOG="${RUNNER_TEMP:-$HOME}/glazewm.log"
+
+    log_info "Starting GlazeWM (log: $GLAZE_LOG)..."
+    "$GLAZE_BIN" start >"$GLAZE_LOG" 2>&1 &
     GLAZE_PID=$!
     track_pid "$GLAZE_PID"
 
-    # Wait until the IPC server is accepting connections.
+    # Wait until the IPC server is accepting connections. Do NOT watch the
+    # launcher PID — on Windows `glazewm start` may detach into a child,
+    # leaving the launcher process exited even though the WM is up. We rely
+    # solely on the IPC probe to decide whether GlazeWM is alive.
     if ! wait_until \
         '"$GLAZE_BIN" query focused >/dev/null 2>&1' \
-        20 "GlazeWM IPC" "$GLAZE_PID"
+        30 "GlazeWM IPC"
     then
-        [[ -f /tmp/glazewm.log ]] && log_warn "GlazeWM log:" && cat /tmp/glazewm.log >&2
+        log_warn "GlazeWM did not respond on the IPC socket"
+        if [[ -f "$GLAZE_LOG" ]]; then
+            log_warn "GlazeWM log ($GLAZE_LOG):"
+            cat "$GLAZE_LOG" >&2 || true
+        else
+            log_warn "no log file at $GLAZE_LOG"
+        fi
+        # Dump anything resembling a glazewm process so we can see if it
+        # detached but is hung.
+        if command -v tasklist >/dev/null 2>&1; then
+            log_warn "running glazewm-like processes:"
+            tasklist 2>/dev/null | grep -i glaze >&2 || log_warn "  (none)"
+        fi
         return 1
     fi
 
-    log_info "GlazeWM running (PID=$GLAZE_PID)"
+    log_info "GlazeWM running (launcher PID=$GLAZE_PID)"
 }
 
 wm_cleanup() {
