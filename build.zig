@@ -108,6 +108,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "nvg-linux-amd64", .query = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } },
         .{ .name = "nvg-linux-arm64", .query = .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu } },
         .{ .name = "nvg-linux-armv7", .query = .{ .cpu_arch = .arm, .os_tag = .linux, .abi = .gnueabihf } },
+        .{ .name = "nvg-windows-amd64", .query = .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu } },
     };
     const release_step = b.step("release", "Build release binaries with checksums");
     for (release_targets) |rt| {
@@ -147,7 +148,9 @@ const ChecksumStep = struct {
 
     fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
         const self: *ChecksumStep = @fieldParentPtr("step", step);
-        const bin_name = self.artifact.name;
+        // `out_filename` includes the OS-specific extension (e.g. .exe on
+        // Windows targets); `name` is just the base.
+        const bin_name = self.artifact.out_filename;
         const bin_dir = step.owner.getInstallPath(.bin, "");
 
         var dir = std.fs.openDirAbsolute(bin_dir, .{}) catch |err|

@@ -25,7 +25,7 @@ pub fn main() !void {
 
     // Parse --junit <path> from CLI args.
     var junit_path: ?[]const u8 = null;
-    var args = std.process.args();
+    var args = try std.process.argsWithAllocator(std.heap.page_allocator);
     _ = args.next(); // skip argv[0]
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--junit")) {

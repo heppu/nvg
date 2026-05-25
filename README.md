@@ -12,38 +12,51 @@ Seamless navigation between your window manager and applications without plugins
 
 ### Supported Window Managers
 
-| Window Manager | Status |
-|----------------|--------|
-| Sway           | Full support |
-| i3             | Full support (same IPC protocol as Sway) |
-| Hyprland       | Full support |
-| Niri           | Full support |
-| River          | Full support |
-| dwm            | Full support ([dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/) required) |
+| Window Manager | Platform | Status |
+|----------------|----------|--------|
+| Sway           | Linux    | Full support |
+| i3             | Linux    | Full support (same IPC protocol as Sway) |
+| Hyprland       | Linux    | Full support |
+| Niri           | Linux    | Full support |
+| River          | Linux    | Full support |
+| dwm            | Linux    | Full support ([dwmfifo patch](https://dwm.suckless.org/patches/dwmfifo/) required) |
+| GlazeWM        | Windows  | Full support |
 
-The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`, `XDG_CURRENT_DESKTOP=river`, `DWM_FIFO`), or can be specified explicitly with `--wm`.
+The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3SOCK`, `HYPRLAND_INSTANCE_SIGNATURE`, `NIRI_SOCKET`, `XDG_CURRENT_DESKTOP=river`, `DWM_FIFO`) on Linux, and defaults to GlazeWM on Windows. The backend can be specified explicitly with `--wm`.
 
 ## Supported Applications
 
-| Application | Status |
-|-------------|--------|
-| Neovim      | Full support |
-| tmux        | Full support |
-| WezTerm     | Full support |
-| Kitty       | Full support (requires `allow_remote_control yes` in `kitty.conf`) |
+| Application | Platform | Status |
+|-------------|----------|--------|
+| Neovim      | Linux + Windows | Full support |
+| tmux        | Linux           | Full support |
+| WezTerm     | Linux           | Full support |
+| Kitty       | Linux           | Full support (requires `allow_remote_control yes` in `kitty.conf`) |
+
+On Windows, only the Neovim hook is enabled. The terminal hooks (tmux/WezTerm/Kitty) rely on reading other processes' environment blocks from `/proc`, which has no clean Windows equivalent.
 
 ## Installation
 
 ### Download binary
 
-Prebuilt Linux binaries for amd64, arm64, and armv7 are available from
-[GitHub Releases](https://github.com/heppu/nvg/releases):
+Prebuilt binaries for Linux (amd64, arm64, armv7) and Windows (amd64) are available from
+[GitHub Releases](https://github.com/heppu/nvg/releases).
+
+Linux:
 
 ```sh
 curl -Lo nvg https://github.com/heppu/nvg/releases/latest/download/nvg-linux-amd64
 chmod +x nvg
 sudo mv nvg /usr/local/bin/
 ```
+
+Windows (PowerShell):
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/heppu/nvg/releases/latest/download/nvg-windows-amd64.exe -OutFile $env:USERPROFILE\bin\nvg.exe
+```
+
+Make sure `%USERPROFILE%\bin` is on your `PATH`.
 
 ### Build from source
 
@@ -148,6 +161,30 @@ static const Key keys[] = {
 };
 ```
 
+### GlazeWM (Windows)
+
+GlazeWM exposes a WebSocket IPC on `ws://127.0.0.1:6123` that `nvg` speaks
+directly — no plugin or sidecar process needed. Make sure the GlazeWM IPC
+server is enabled (it is by default).
+
+In your `~/.glzr/glazewm/config.yaml`, replace the default `focus` keybindings
+with `shell-exec` invocations of `nvg`:
+
+```yaml
+keybindings:
+  - commands: ["shell-exec nvg left"]
+    bindings: ["alt+h"]
+  - commands: ["shell-exec nvg right"]
+    bindings: ["alt+l"]
+  - commands: ["shell-exec nvg up"]
+    bindings: ["alt+k"]
+  - commands: ["shell-exec nvg down"]
+    bindings: ["alt+j"]
+```
+
+If you've moved GlazeWM's IPC server to a non-default port, set
+`GLAZEWM_PORT` so `nvg` can find it.
+
 ## How It Works
 
 1. Connect to the window manager (auto-detect or `--wm` flag).
@@ -193,6 +230,7 @@ static const Key keys[] = {
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
 | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` | Read from the focused process's `/proc/<pid>/environ` to drive the WezTerm hook |
 | `KITTY_LISTEN_ON` / `KITTY_WINDOW_ID` | Read from the focused process's `/proc/<pid>/environ` to drive the Kitty hook |
+| `GLAZEWM_PORT` | Override the default GlazeWM IPC port (`6123`) |
 
 ### CLI Options
 
@@ -202,9 +240,11 @@ Usage: nvg <left|right|up|down> [options]
 Options:
   -t, --timeout <ms>       IPC timeout in milliseconds (default: 100)
   --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
-                             Available: nvim, tmux, wezterm, kitty
+                             Linux:   nvim, tmux, wezterm, kitty
+                             Windows: nvim
   --wm <name>              Window manager backend (default: auto-detect)
-                             Available: sway, i3, hyprland, niri, river, dwm
+                             Linux:   sway, i3, hyprland, niri, river, dwm
+                             Windows: glazewm
   -v, --version            Print version
   -h, --help               Print this help
 ```

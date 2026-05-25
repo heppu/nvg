@@ -82,7 +82,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: release-binaries
-          path: zig-out/bin/nvg-linux-*
+          path: |
+            zig-out/bin/nvg-linux-*
+            zig-out/bin/nvg-windows-*.exe
+            zig-out/bin/nvg-windows-*.sha256
           if-no-files-found: error
 
   e2e:
@@ -151,8 +154,41 @@ jobs:
           flags: ${{ matrix.wm }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  e2e-windows:
+    needs: ci
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: release-binaries
+
+      - name: Stage nvg.exe
+        shell: bash
+        run: |
+          install -m 755 nvg-windows-amd64.exe "$RUNNER_TEMP/nvg.exe"
+
+      - name: Run GlazeWM e2e tests
+        shell: bash
+        env:
+          NVG_BIN: ${{ runner.temp }}/nvg.exe
+          JUNIT_XML: ${{ github.workspace }}/test-results-glazewm.xml
+        run: bash test/e2e/test-glazewm.sh
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v6
+        with:
+          files: test-results-glazewm.xml
+          report_type: test_results
+          flags: glazewm
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   release:
-    needs: [ci, e2e]
+    needs: [ci, e2e, e2e-windows]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -188,4 +224,4 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes \
-            nvg-linux-*
+            nvg-linux-* nvg-windows-*

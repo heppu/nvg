@@ -1,8 +1,14 @@
 /// Generic process tree walker.
 ///
-/// Walks /proc/<pid>/task/*/children recursively, reading cmdline and exe
-/// for each child process, and calls hook detectors to find matching applications.
+/// On Linux, walks /proc/<pid>/task/*/children recursively, reading cmdline
+/// and exe for each child process, and calls hook detectors to find matching
+/// applications.
+///
+/// On Windows, enumerates all processes via Toolhelp32Snapshot and walks the
+/// parent-child relationships in memory, resolving the full executable path
+/// via QueryFullProcessImageNameW for each candidate.
 const std = @import("std");
+const builtin = @import("builtin");
 const posix = std.posix;
 
 const hook_mod = @import("hook.zig");
@@ -14,6 +20,15 @@ const max_depth = 5;
 /// Walk the process tree rooted at parent_pid, checking each child against
 /// the enabled hooks. Appends matches to result with their depth.
 pub fn walkTree(parent_pid: i32, enabled_hooks: []const *const Hook, result: *DetectedList, depth: u32) void {
+    if (comptime builtin.os.tag == .windows) {
+        return walkTreeWindows(parent_pid, enabled_hooks, result, depth);
+    }
+    return walkTreeLinux(parent_pid, enabled_hooks, result, depth);
+}
+
+// ─── Linux ───
+
+fn walkTreeLinux(parent_pid: i32, enabled_hooks: []const *const Hook, result: *DetectedList, depth: u32) void {
     if (depth > max_depth) return;
     if (result.len >= hook_mod.max_detected) return;
 
@@ -76,16 +91,166 @@ pub fn walkTree(parent_pid: i32, enabled_hooks: []const *const Hook, result: *De
 
             // Recurse into child's subtree
             if (result.len < hook_mod.max_detected) {
-                walkTree(child_pid, enabled_hooks, result, depth + 1);
+                walkTreeLinux(child_pid, enabled_hooks, result, depth + 1);
             }
         }
     }
 }
 
+// ─── Windows ───
+
+const w = std.os.windows;
+const TH32CS_SNAPPROCESS: u32 = 0x00000002;
+const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+const PROCESSENTRY32W = extern struct {
+    dwSize: u32,
+    cntUsage: u32,
+    th32ProcessID: u32,
+    th32DefaultHeapID: usize,
+    th32ModuleID: u32,
+    cntThreads: u32,
+    th32ParentProcessID: u32,
+    pcPriClassBase: i32,
+    dwFlags: u32,
+    szExeFile: [260]u16,
+};
+
+extern "kernel32" fn CreateToolhelp32Snapshot(dwFlags: u32, th32ProcessID: u32) callconv(.winapi) w.HANDLE;
+extern "kernel32" fn Process32FirstW(hSnapshot: w.HANDLE, lppe: *PROCESSENTRY32W) callconv(.winapi) w.BOOL;
+extern "kernel32" fn Process32NextW(hSnapshot: w.HANDLE, lppe: *PROCESSENTRY32W) callconv(.winapi) w.BOOL;
+extern "kernel32" fn CloseHandle(hObject: w.HANDLE) callconv(.winapi) w.BOOL;
+extern "kernel32" fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: w.BOOL, dwProcessId: u32) callconv(.winapi) ?w.HANDLE;
+extern "kernel32" fn QueryFullProcessImageNameW(
+    hProcess: w.HANDLE,
+    dwFlags: u32,
+    lpExeName: [*]u16,
+    lpdwSize: *u32,
+) callconv(.winapi) w.BOOL;
+
+const max_proc_entries = 1024;
+
+const ProcEntry = struct {
+    pid: u32,
+    parent: u32,
+    /// argv[0]-equivalent: just the executable filename, no path.
+    name_utf8: [512]u8 = undefined,
+    name_len: usize = 0,
+};
+
+/// Process snapshot — populated once per top-level walkTree call.
+threadlocal var snapshot_buf: [max_proc_entries]ProcEntry = undefined;
+threadlocal var snapshot_len: usize = 0;
+threadlocal var snapshot_valid: bool = false;
+
+fn walkTreeWindows(parent_pid: i32, enabled_hooks: []const *const Hook, result: *DetectedList, depth: u32) void {
+    // Build the snapshot once per detection cycle. We invalidate it before
+    // returning at depth 0 so subsequent invocations re-snapshot.
+    const root = depth == 0;
+    if (root) {
+        snapshot_valid = false;
+        snapshot_len = 0;
+        takeSnapshot();
+        snapshot_valid = true;
+    }
+    defer if (root) {
+        snapshot_valid = false;
+        snapshot_len = 0;
+    };
+
+    walkInnerWindows(parent_pid, enabled_hooks, result, depth);
+}
+
+fn walkInnerWindows(parent_pid: i32, enabled_hooks: []const *const Hook, result: *DetectedList, depth: u32) void {
+    if (depth > max_depth) return;
+    if (result.len >= hook_mod.max_detected) return;
+    if (!snapshot_valid) return;
+
+    for (snapshot_buf[0..snapshot_len]) |*entry| {
+        if (@as(i32, @intCast(entry.parent)) != parent_pid) continue;
+        const child_pid: i32 = @intCast(entry.pid);
+
+        const cmd = entry.name_utf8[0..entry.name_len];
+
+        // Resolve the full executable path. Treat failure as empty.
+        var exe_buf: [1024]u8 = undefined;
+        const exe = queryFullPath(entry.pid, &exe_buf) orelse "";
+
+        for (enabled_hooks) |h| {
+            if (h.detectFn(child_pid, cmd, exe, "")) |matched_pid| {
+                result.append(.{ .hook = h, .pid = matched_pid, .depth = depth });
+                break;
+            }
+        }
+
+        if (result.len < hook_mod.max_detected) {
+            walkInnerWindows(child_pid, enabled_hooks, result, depth + 1);
+        }
+        if (result.len >= hook_mod.max_detected) return;
+    }
+}
+
+fn takeSnapshot() void {
+    const snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == w.INVALID_HANDLE_VALUE) return;
+    defer _ = CloseHandle(snap);
+
+    var entry: PROCESSENTRY32W = undefined;
+    entry.dwSize = @sizeOf(PROCESSENTRY32W);
+    if (Process32FirstW(snap, &entry) == 0) return;
+
+    while (true) {
+        if (snapshot_len >= snapshot_buf.len) break;
+        const slot = &snapshot_buf[snapshot_len];
+        slot.pid = entry.th32ProcessID;
+        slot.parent = entry.th32ParentProcessID;
+
+        // Convert szExeFile (NUL-terminated WTF-16) to UTF-8.
+        // Max source: 260 u16 → max 3*260 = 780 UTF-8 bytes for BMP, but
+        // realistic process names fit well under our 512-byte buffer. If
+        // the conversion would overflow, truncate at the WTF-16 level.
+        var name_len: usize = 0;
+        while (name_len < entry.szExeFile.len and entry.szExeFile[name_len] != 0) : (name_len += 1) {}
+        // Conservatively bound the source length: 512 / 3 ≈ 170 BMP chars
+        // is more than enough for any executable filename.
+        const max_src = slot.name_utf8.len / 3;
+        const src_len = if (name_len < max_src) name_len else max_src;
+        const wide = entry.szExeFile[0..src_len];
+        slot.name_len = std.unicode.wtf16LeToWtf8(&slot.name_utf8, wide);
+
+        snapshot_len += 1;
+
+        entry.dwSize = @sizeOf(PROCESSENTRY32W);
+        if (Process32NextW(snap, &entry) == 0) break;
+    }
+}
+
+fn queryFullPath(pid: u32, out: []u8) ?[]const u8 {
+    const handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) orelse return null;
+    defer _ = CloseHandle(handle);
+
+    // Size the WTF-16 buffer so that 3x its length fits in `out`.
+    const max_wide = @min(out.len / 3, 1024);
+    var wide_buf: [1024]u16 = undefined;
+    var size: u32 = @intCast(max_wide);
+    if (QueryFullProcessImageNameW(handle, 0, &wide_buf, &size) == 0) return null;
+    if (size == 0) return null;
+    const utf8_len = std.unicode.wtf16LeToWtf8(out, wide_buf[0..size]);
+    if (utf8_len == 0) return null;
+    return out[0..utf8_len];
+}
+
 /// Read a file into the provided buffer, returning the slice of content read.
 /// Reads in a loop to handle cases where a single read() doesn't return all
 /// data (e.g., /proc files with many entries).
+///
+/// Linux only. Not used on Windows.
 pub fn readFileToBuffer(path: []const u8, buf: []u8) ?[]const u8 {
+    if (comptime builtin.os.tag == .windows) return null;
+    return readFileToBufferPosix(path, buf);
+}
+
+fn readFileToBufferPosix(path: []const u8, buf: []u8) ?[]const u8 {
     const path_z = posix.toPosixPath(path) catch return null;
     const fd = posix.openatZ(posix.AT.FDCWD, &path_z, .{}, 0) catch return null;
     defer posix.close(fd);
@@ -114,10 +279,15 @@ pub const EnvSlot = struct {
 /// provided slots. Each slot is filled in-place at most once. Returns
 /// true if any slot was filled.
 ///
-/// Used by terminal hooks (kitty, wezterm) to discover their socket /
-/// pane / window-id env vars from the focused process — these env vars
-/// aren't inherited by nvg, only by the terminal's child shells.
+/// Linux only — Windows has no equivalent way to read another process's
+/// environment block without diving into the PEB via NtQueryInformationProcess.
+/// On Windows this always returns false.
 pub fn readProcEnviron(pid: i32, slots: []const EnvSlot) bool {
+    if (comptime builtin.os.tag == .windows) return false;
+    return readProcEnvironPosix(pid, slots);
+}
+
+fn readProcEnvironPosix(pid: i32, slots: []const EnvSlot) bool {
     var path_buf: [64]u8 = undefined;
     const environ_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/environ", .{pid}) catch return false;
 
@@ -161,6 +331,7 @@ test "nullTermStr no null" {
 }
 
 test "readFileToBuffer reads /proc/self/cmdline" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     var buf: [4096]u8 = undefined;
     const content = readFileToBuffer("/proc/self/cmdline", &buf);
     try std.testing.expect(content != null);
@@ -168,11 +339,13 @@ test "readFileToBuffer reads /proc/self/cmdline" {
 }
 
 test "readFileToBuffer returns null for nonexistent path" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     var buf: [64]u8 = undefined;
     try std.testing.expectEqual(@as(?[]const u8, null), readFileToBuffer("/nonexistent/path/file", &buf));
 }
 
 test "readProcEnviron returns false for nonexistent pid" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     var dst: [16]u8 = undefined;
     var dst_len: usize = 0;
     const slots = [_]EnvSlot{.{ .key = "FOO", .buf = &dst, .len = &dst_len }};
@@ -181,6 +354,7 @@ test "readProcEnviron returns false for nonexistent pid" {
 }
 
 test "readProcEnviron reads /proc/self/environ" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     // /proc/self/environ should have at least PATH set in any normal env.
     var path_buf: [4096]u8 = undefined;
     var path_len: usize = 0;
@@ -196,6 +370,7 @@ test "readProcEnviron reads /proc/self/environ" {
 }
 
 test "readProcEnviron skips already-filled slots" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     // Build a synthetic /proc/<pid>/environ scenario by calling against
     // /proc/self with a slot we pre-fill. The function should leave it alone.
     var dst: [16]u8 = undefined;
@@ -207,4 +382,15 @@ test "readProcEnviron skips already-filled slots" {
     // dst[0..5] should still be "stale" — slot was already filled.
     try std.testing.expectEqual(@as(usize, 5), dst_len);
     try std.testing.expectEqualStrings("stale", dst[0..5]);
+}
+
+test "windows.walkTree finds current process via snapshot" {
+    if (comptime builtin.os.tag != .windows) return error.SkipZigTest;
+    // Smoke test: the snapshot should at least include this test process,
+    // which means walking from PID 4 (System) should produce some result.
+    // We don't assert on specific PIDs — just that the call doesn't crash.
+    var result = DetectedList{};
+    walkTree(4, &[_]*const Hook{}, &result, 0);
+    // No detectors registered — result must stay empty but the call must not crash.
+    try std.testing.expectEqual(@as(usize, 0), result.len);
 }

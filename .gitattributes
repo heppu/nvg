@@ -1,0 +1,4 @@
+# Shell scripts must use LF line endings — they're run under bash on
+# Linux runners and under Git Bash on the Windows runner, both of which
+# choke on CRLF (`$'\r': command not found`).
+*.sh text eol=lf

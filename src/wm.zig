@@ -1,36 +1,50 @@
 /// Window manager abstraction layer.
 ///
 /// Provides a common interface for interacting with different window managers
-/// (sway/i3, hyprland, dwm, awesome, etc.). Each backend implements the
-/// WindowManager vtable to provide getFocusedPid and moveFocus operations.
+/// (sway/i3, hyprland, niri, river, dwm on Linux; GlazeWM on Windows). Each
+/// backend implements the WindowManager vtable to provide getFocusedPid and
+/// moveFocus operations.
 ///
 /// Backend selection is either explicit (--wm flag) or auto-detected from
-/// environment variables (SWAYSOCK, I3SOCK, HYPRLAND_INSTANCE_SIGNATURE, etc.).
+/// environment variables (SWAYSOCK, I3SOCK, HYPRLAND_INSTANCE_SIGNATURE, …)
+/// or, on Windows, by probing the GlazeWM IPC socket.
 const std = @import("std");
-const posix = std.posix;
+const builtin = @import("builtin");
 
 const Direction = @import("direction.zig").Direction;
-const Sway = @import("sway.zig").Sway;
-const Hyprland = @import("hyprland.zig").Hyprland;
-const Niri = @import("niri.zig").Niri;
-const River = @import("river.zig").River;
-const Dwm = @import("dwm.zig").Dwm;
+const platform = @import("platform.zig");
 const log = @import("log.zig");
+
+// Linux-only backends are imported lazily so they're never compiled when
+// targeting Windows (they pull in posix.AF.UNIX, /proc, X11 protocol, etc.).
+const Sway = if (builtin.os.tag == .linux) @import("sway.zig").Sway else void;
+const Hyprland = if (builtin.os.tag == .linux) @import("hyprland.zig").Hyprland else void;
+const Niri = if (builtin.os.tag == .linux) @import("niri.zig").Niri else void;
+const River = if (builtin.os.tag == .linux) @import("river.zig").River else void;
+const Dwm = if (builtin.os.tag == .linux) @import("dwm.zig").Dwm else void;
+const GlazeWm = if (builtin.os.tag == .windows) @import("glazewm.zig").GlazeWm else void;
 
 pub const Error = error{
     NoWmDetected,
     ConnectFailed,
 };
 
-/// A window manager backend identifier.
-pub const Backend = enum {
+/// A window manager backend identifier. Different per platform — Linux WMs
+/// can't run on Windows and vice versa, so listing them here would only
+/// produce confusing error messages.
+pub const Backend = if (builtin.os.tag == .windows) enum {
+    glazewm,
+
+    pub fn fromString(s: []const u8) ?Backend {
+        if (std.mem.eql(u8, s, "glazewm")) return .glazewm;
+        return null;
+    }
+} else enum {
     sway,
     hyprland,
     niri,
     river,
     dwm,
-    // Future backends:
-    // awesome,
 
     pub fn fromString(s: []const u8) ?Backend {
         if (std.mem.eql(u8, s, "sway")) return .sway;
@@ -39,7 +53,6 @@ pub const Backend = enum {
         if (std.mem.eql(u8, s, "niri")) return .niri;
         if (std.mem.eql(u8, s, "river")) return .river;
         if (std.mem.eql(u8, s, "dwm")) return .dwm;
-        // if (std.mem.eql(u8, s, "awesome")) return .awesome;
         return null;
     }
 };
@@ -120,14 +133,24 @@ pub fn vtable(comptime T: type) WindowManager {
 /// Holds the concrete backend struct in a tagged union, avoiding heap
 /// allocation. The caller owns this struct on the stack and accesses
 /// the common WindowManager interface via the wm() method.
-pub const Connection = union(Backend) {
+pub const Connection = if (builtin.os.tag == .windows) union(Backend) {
+    glazewm: GlazeWm,
+
+    pub fn wm(self: *Connection) *WindowManager {
+        return switch (self.*) {
+            inline else => |*backend| &backend.wm,
+        };
+    }
+
+    pub fn deinit(self: *Connection) void {
+        self.wm().disconnect();
+    }
+} else union(Backend) {
     sway: Sway,
     hyprland: Hyprland,
     niri: Niri,
     river: River,
     dwm: Dwm,
-    // Future backends:
-    // awesome: Awesome,
 
     pub fn wm(self: *Connection) *WindowManager {
         return switch (self.*) {
@@ -143,32 +166,39 @@ pub const Connection = union(Backend) {
 /// Auto-detect the running window manager from environment variables.
 /// Returns the detected backend, or null if no supported WM is detected.
 pub fn detectBackend() ?Backend {
+    if (comptime builtin.os.tag == .windows) {
+        // Only one supported backend on Windows — assume it if the user
+        // didn't pick something else. The actual probe happens in connect().
+        log.log("auto-detected glazewm (windows default)", .{});
+        return .glazewm;
+    }
+
     // Check sway first (SWAYSOCK is set by sway)
-    if (posix.getenv("SWAYSOCK")) |_| {
+    if (platform.getenv("SWAYSOCK")) |_| {
         log.log("auto-detected sway (SWAYSOCK set)", .{});
         return .sway;
     }
 
     // Check i3 (I3SOCK is set by i3)
-    if (posix.getenv("I3SOCK")) |_| {
+    if (platform.getenv("I3SOCK")) |_| {
         log.log("auto-detected i3 (I3SOCK set)", .{});
         return .sway; // i3 uses the same IPC protocol
     }
 
     // Check Hyprland (HYPRLAND_INSTANCE_SIGNATURE is set by Hyprland)
-    if (posix.getenv("HYPRLAND_INSTANCE_SIGNATURE")) |_| {
+    if (platform.getenv("HYPRLAND_INSTANCE_SIGNATURE")) |_| {
         log.log("auto-detected hyprland (HYPRLAND_INSTANCE_SIGNATURE set)", .{});
         return .hyprland;
     }
 
     // Check Niri (NIRI_SOCKET is set by niri)
-    if (posix.getenv("NIRI_SOCKET")) |_| {
+    if (platform.getenv("NIRI_SOCKET")) |_| {
         log.log("auto-detected niri (NIRI_SOCKET set)", .{});
         return .niri;
     }
 
     // Check River (XDG_CURRENT_DESKTOP=river is set by river)
-    if (posix.getenv("XDG_CURRENT_DESKTOP")) |desktop| {
+    if (platform.getenv("XDG_CURRENT_DESKTOP")) |desktop| {
         if (std.mem.eql(u8, desktop, "river")) {
             log.log("auto-detected river (XDG_CURRENT_DESKTOP=river)", .{});
             return .river;
@@ -176,13 +206,10 @@ pub fn detectBackend() ?Backend {
     }
 
     // Check dwm (DWM_FIFO is set by the user for dwmfifo patch)
-    if (posix.getenv("DWM_FIFO")) |_| {
+    if (platform.getenv("DWM_FIFO")) |_| {
         log.log("auto-detected dwm (DWM_FIFO set)", .{});
         return .dwm;
     }
-
-    // Future: check other WM env vars
-    // if (posix.getenv("...")) |_| { ... }
 
     return null;
 }
@@ -196,37 +223,47 @@ pub fn connect(explicit_backend: ?Backend) Error!Connection {
         return Error.NoWmDetected;
     };
 
-    switch (backend) {
-        .sway => {
-            // Try SWAYSOCK first, fall back to I3SOCK
-            const socket_path = posix.getenv("SWAYSOCK") orelse
-                posix.getenv("I3SOCK") orelse return Error.ConnectFailed;
-            const sway = Sway.connect(socket_path) catch return Error.ConnectFailed;
-            return .{ .sway = sway };
-        },
-        .hyprland => {
-            const hyprland = Hyprland.connect() catch return Error.ConnectFailed;
-            return .{ .hyprland = hyprland };
-        },
-        .niri => {
-            const niri = Niri.connect() catch return Error.ConnectFailed;
-            return .{ .niri = niri };
-        },
-        .river => {
-            const river = River.connect() catch return Error.ConnectFailed;
-            return .{ .river = river };
-        },
-        .dwm => {
-            const dwm_conn = Dwm.connect() catch return Error.ConnectFailed;
-            return .{ .dwm = dwm_conn };
-        },
-        // Future backends would be handled here:
-        // .awesome => { ... },
+    if (comptime builtin.os.tag == .windows) {
+        switch (backend) {
+            .glazewm => {
+                const g = GlazeWm.connect() catch return Error.ConnectFailed;
+                return .{ .glazewm = g };
+            },
+        }
+    } else {
+        switch (backend) {
+            .sway => {
+                // Try SWAYSOCK first, fall back to I3SOCK
+                const socket_path = platform.getenv("SWAYSOCK") orelse
+                    platform.getenv("I3SOCK") orelse return Error.ConnectFailed;
+                const sway = Sway.connect(socket_path) catch return Error.ConnectFailed;
+                return .{ .sway = sway };
+            },
+            .hyprland => {
+                const hyprland = Hyprland.connect() catch return Error.ConnectFailed;
+                return .{ .hyprland = hyprland };
+            },
+            .niri => {
+                const niri = Niri.connect() catch return Error.ConnectFailed;
+                return .{ .niri = niri };
+            },
+            .river => {
+                const river = River.connect() catch return Error.ConnectFailed;
+                return .{ .river = river };
+            },
+            .dwm => {
+                const dwm_conn = Dwm.connect() catch return Error.ConnectFailed;
+                return .{ .dwm = dwm_conn };
+            },
+        }
     }
 }
 
 /// Return the list of supported backend names for help/error messages.
 pub fn backendNames() []const []const u8 {
+    if (comptime builtin.os.tag == .windows) {
+        return &.{"glazewm"};
+    }
     return &.{ "sway", "i3", "hyprland", "niri", "river", "dwm" };
 }
 
@@ -235,12 +272,16 @@ pub fn backendNames() []const []const u8 {
 const testing = std.testing;
 
 test "Backend.fromString valid names" {
-    try testing.expectEqual(Backend.sway, Backend.fromString("sway").?);
-    try testing.expectEqual(Backend.sway, Backend.fromString("i3").?);
-    try testing.expectEqual(Backend.hyprland, Backend.fromString("hyprland").?);
-    try testing.expectEqual(Backend.niri, Backend.fromString("niri").?);
-    try testing.expectEqual(Backend.river, Backend.fromString("river").?);
-    try testing.expectEqual(Backend.dwm, Backend.fromString("dwm").?);
+    if (comptime builtin.os.tag == .windows) {
+        try testing.expectEqual(Backend.glazewm, Backend.fromString("glazewm").?);
+    } else {
+        try testing.expectEqual(Backend.sway, Backend.fromString("sway").?);
+        try testing.expectEqual(Backend.sway, Backend.fromString("i3").?);
+        try testing.expectEqual(Backend.hyprland, Backend.fromString("hyprland").?);
+        try testing.expectEqual(Backend.niri, Backend.fromString("niri").?);
+        try testing.expectEqual(Backend.river, Backend.fromString("river").?);
+        try testing.expectEqual(Backend.dwm, Backend.fromString("dwm").?);
+    }
 }
 
 test "Backend.fromString unknown returns null" {
@@ -251,10 +292,14 @@ test "Backend.fromString unknown returns null" {
 test "backendNames returns non-empty list" {
     const names = backendNames();
     try testing.expect(names.len > 0);
-    try testing.expectEqualStrings("sway", names[0]);
-    try testing.expectEqualStrings("i3", names[1]);
-    try testing.expectEqualStrings("hyprland", names[2]);
-    try testing.expectEqualStrings("niri", names[3]);
-    try testing.expectEqualStrings("river", names[4]);
-    try testing.expectEqualStrings("dwm", names[5]);
+    if (comptime builtin.os.tag == .windows) {
+        try testing.expectEqualStrings("glazewm", names[0]);
+    } else {
+        try testing.expectEqualStrings("sway", names[0]);
+        try testing.expectEqualStrings("i3", names[1]);
+        try testing.expectEqualStrings("hyprland", names[2]);
+        try testing.expectEqualStrings("niri", names[3]);
+        try testing.expectEqualStrings("river", names[4]);
+        try testing.expectEqualStrings("dwm", names[5]);
+    }
 }
