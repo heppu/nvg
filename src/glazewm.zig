@@ -113,14 +113,15 @@ fn handshake(stream: std.net.Stream, port: u16) !void {
     const expected_accept = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
 
     var req_buf: [512]u8 = undefined;
-    const req = std.fmt.bufPrint(&req_buf,
+    const req = std.fmt.bufPrint(
+        &req_buf,
         "GET / HTTP/1.1\r\n" ++
-        "Host: 127.0.0.1:{d}\r\n" ++
-        "Upgrade: websocket\r\n" ++
-        "Connection: Upgrade\r\n" ++
-        "Sec-WebSocket-Key: {s}\r\n" ++
-        "Sec-WebSocket-Version: 13\r\n" ++
-        "\r\n",
+            "Host: 127.0.0.1:{d}\r\n" ++
+            "Upgrade: websocket\r\n" ++
+            "Connection: Upgrade\r\n" ++
+            "Sec-WebSocket-Key: {s}\r\n" ++
+            "Sec-WebSocket-Version: 13\r\n" ++
+            "\r\n",
         .{ port, fixed_key_b64 },
     ) catch return error.HandshakeRequestTooLong;
 
