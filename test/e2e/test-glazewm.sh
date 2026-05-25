@@ -32,8 +32,13 @@ GLAZE_BIN="${GLAZE_BIN:-glazewm}"
 install_deps() {
     log_info "Installing GlazeWM dependencies..."
 
-    # On the GitHub windows-latest runner GlazeWM is not pre-installed but
-    # winget is. Skip silently if either is already on PATH.
+    # GitHub Actions exports these as Windows env vars; treat missing as empty
+    # so `set -u` doesn't fire when the script runs outside a real Windows
+    # user session.
+    local localappdata="${LOCALAPPDATA:-}"
+    local progfiles="${PROGRAMFILES:-${ProgramFiles:-/c/Program Files}}"
+
+    # Skip silently if glazewm is already on PATH.
     if ! command -v "$GLAZE_BIN" >/dev/null 2>&1; then
         if command -v winget >/dev/null 2>&1; then
             # --accept-source-agreements: skip the first-run TUI prompt
@@ -42,19 +47,25 @@ install_deps() {
                 --accept-source-agreements --accept-package-agreements \
                 --silent --disable-interactivity || true
 
-            # winget installs to %LOCALAPPDATA%\Microsoft\WinGet\Packages\... and
-            # adds a PATH entry that may not be visible to the current shell.
-            # Try common install locations.
-            for candidate in \
-                "$LOCALAPPDATA/Programs/glzr.io/GlazeWM/glazewm.exe" \
-                "$ProgramFiles/glzr.io/GlazeWM/glazewm.exe" \
-                "$LOCALAPPDATA/Microsoft/WinGet/Links/glazewm.exe"
-            do
-                if [[ -x "$candidate" ]]; then
-                    GLAZE_BIN="$candidate"
-                    break
-                fi
-            done
+            # winget drops a shim in %LOCALAPPDATA%\Microsoft\WinGet\Links\
+            # that's added to the *user* PATH — invisible to the current
+            # shell. Add it ourselves, then fall back to common install dirs.
+            if [[ -n "$localappdata" ]]; then
+                export PATH="$localappdata/Microsoft/WinGet/Links:$PATH"
+            fi
+
+            if ! command -v "$GLAZE_BIN" >/dev/null 2>&1; then
+                for candidate in \
+                    "${localappdata}/Programs/glzr.io/GlazeWM/glazewm.exe" \
+                    "${progfiles}/glzr.io/GlazeWM/glazewm.exe" \
+                    "${localappdata}/Microsoft/WinGet/Links/glazewm.exe"
+                do
+                    if [[ -n "$candidate" && -x "$candidate" ]]; then
+                        GLAZE_BIN="$candidate"
+                        break
+                    fi
+                done
+            fi
         elif command -v choco >/dev/null 2>&1; then
             choco install glazewm -y --no-progress
         else
@@ -67,6 +78,7 @@ install_deps() {
         log_fail "GlazeWM CLI not on PATH after install (tried: $GLAZE_BIN)"
         return 1
     fi
+    log_info "GlazeWM CLI: $GLAZE_BIN"
 
     if ! command -v jq >/dev/null 2>&1; then
         if command -v winget >/dev/null 2>&1; then

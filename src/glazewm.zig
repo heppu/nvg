@@ -82,8 +82,8 @@ fn ipcRequest(port: u16, request: []const u8, buf: []u8) ?[]const u8 {
     };
     defer stream.close();
 
-    handshake(stream, port) catch {
-        log.log("glazewm: websocket handshake failed", .{});
+    handshake(stream, port) catch |err| {
+        log.log("glazewm: websocket handshake failed: {s}", .{@errorName(err)});
         return null;
     };
 
@@ -261,7 +261,26 @@ fn recvTextFrame(stream: std.net.Stream, out: []u8) ![]const u8 {
     }
 }
 
+// Stream.read in Zig 0.15 calls ReadFile on Windows, which fails on
+// overlapped Winsock SOCKETs with ERROR_INVALID_PARAMETER. Use recv()
+// directly instead. Stream.write goes through the buffered Writer, which
+// already uses send() under the hood, but we keep a thin wrapper so the
+// loop here mirrors the read side.
+
+const ws2 = if (builtin.os.tag == .windows) std.os.windows.ws2_32 else void;
+
 fn streamWriteAll(stream: std.net.Stream, data: []const u8) !void {
+    if (comptime builtin.os.tag == .windows) {
+        var written: c_int = 0;
+        var remaining: c_int = @intCast(data.len);
+        while (remaining > 0) {
+            const n = ws2.send(@ptrCast(stream.handle), data.ptr + @as(usize, @intCast(written)), remaining, 0);
+            if (n == ws2.SOCKET_ERROR or n == 0) return error.WriteFailed;
+            written += n;
+            remaining -= n;
+        }
+        return;
+    }
     var written: usize = 0;
     while (written < data.len) {
         const n = stream.write(data[written..]) catch return error.WriteFailed;
@@ -271,13 +290,19 @@ fn streamWriteAll(stream: std.net.Stream, data: []const u8) !void {
 }
 
 fn streamRead(stream: std.net.Stream, buf: []u8) !usize {
+    if (comptime builtin.os.tag == .windows) {
+        const len: c_int = @intCast(buf.len);
+        const n = ws2.recv(@ptrCast(stream.handle), buf.ptr, len, 0);
+        if (n == ws2.SOCKET_ERROR) return error.ReadFailed;
+        return @intCast(n);
+    }
     return stream.read(buf) catch error.ReadFailed;
 }
 
 fn streamReadExact(stream: std.net.Stream, buf: []u8) !void {
     var total: usize = 0;
     while (total < buf.len) {
-        const n = stream.read(buf[total..]) catch return error.ReadFailed;
+        const n = try streamRead(stream, buf[total..]);
         if (n == 0) return error.ReadFailed;
         total += n;
     }
