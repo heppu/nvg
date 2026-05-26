@@ -4,6 +4,7 @@
 /// (e.g., nvim splits, tmux panes). The focus system tries hooks innermost-first
 /// and bubbles up to the next outer layer (or sway) when a hook is at its edge.
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Direction = @import("direction.zig").Direction;
 const process = @import("process.zig");
@@ -71,7 +72,13 @@ pub const DetectedList = struct {
 
 /// All registered hooks. Order here doesn't matter — detection order
 /// is determined by process tree depth (innermost wins).
-pub const all_hooks = [_]*const Hook{
+///
+/// On Windows only the nvim hook is enabled. tmux/wezterm/kitty discovery
+/// relies on reading other processes' environment blocks from /proc, which
+/// has no clean equivalent on Windows.
+pub const all_hooks = if (builtin.os.tag == .windows) [_]*const Hook{
+    &@import("hooks/nvim.zig").hook,
+} else [_]*const Hook{
     &@import("hooks/nvim.zig").hook,
     &@import("hooks/tmux.zig").hook,
     &@import("hooks/wezterm.zig").hook,
@@ -118,18 +125,21 @@ test "findHookByName returns nvim hook" {
 }
 
 test "findHookByName returns tmux hook" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const h = findHookByName("tmux");
     try std.testing.expect(h != null);
     try std.testing.expectEqualStrings("tmux", h.?.name);
 }
 
 test "findHookByName returns wezterm hook" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const h = findHookByName("wezterm");
     try std.testing.expect(h != null);
     try std.testing.expectEqualStrings("wezterm", h.?.name);
 }
 
 test "findHookByName returns kitty hook" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const h = findHookByName("kitty");
     try std.testing.expect(h != null);
     try std.testing.expectEqualStrings("kitty", h.?.name);
@@ -140,6 +150,7 @@ test "findHookByName returns null for unknown" {
 }
 
 test "DetectedList append and len" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const nvim_hook = &@import("hooks/nvim.zig").hook;
     const tmux_hook = &@import("hooks/tmux.zig").hook;
     var list = DetectedList{};

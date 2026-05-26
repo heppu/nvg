@@ -45,12 +45,30 @@ KCOV_DIR="${KCOV_DIR:-}"
 #   Use this from each WM's run_nvg function instead of calling $NVG_BIN directly.
 #   If KCOV_DIR is set, wraps the invocation with kcov. Each run automatically
 #   merges into the same output directory.
+#
+#   kcov 43 (current Ubuntu/plucky build) is flaky on the hosted runners: it
+#   intermittently fails to trace and exits non-zero *without ever running the
+#   target*, which would fail the behavioural assertions for reasons that have
+#   nothing to do with nvg (observed: the same binary passes in some matrix
+#   jobs and exits 4 in others on the same run). nvg itself only ever exits 0
+#   (success) or 1 (usage/connect error), so any other exit code from the
+#   kcov-wrapped run is a kcov-internal failure: retry once, then fall back to
+#   running nvg directly so the assertion reflects nvg's behaviour. Coverage
+#   for that one invocation is lost, but the gate stays meaningful.
 run_nvg_bin() {
-    if [[ -n "$KCOV_DIR" ]]; then
-        kcov --cobertura-only --include-pattern=src/ "$KCOV_DIR" "$@"
-    else
+    if [[ -z "${KCOV_DIR:-}" ]]; then
         "$@"
+        return
     fi
+
+    local rc attempt
+    for attempt in 1 2; do
+        rc=0
+        kcov --cobertura-only --include-pattern=src/ "$KCOV_DIR" "$@" || rc=$?
+        [[ "$rc" -eq 0 || "$rc" -eq 1 ]] && return "$rc"
+    done
+    # kcov itself keeps failing — run nvg directly for a trustworthy exit code.
+    "$@"
 }
 
 # ─── Counters ───

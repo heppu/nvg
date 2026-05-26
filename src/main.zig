@@ -2,11 +2,12 @@
 /// windows and focus-aware applications (nvim, tmux, wezterm, kitty).
 ///
 /// Supports multiple window managers through the WindowManager interface:
-///   - sway / i3 (i3-ipc protocol)
-///   - More backends can be added by implementing the WindowManager trait.
+///   - Linux: sway / i3 (i3-ipc), hyprland, niri, river (wayland), dwm (X11)
+///   - Windows: GlazeWM (WebSocket IPC)
 ///
 /// Usage: nvg <left|right|up|down> [options]
 const std = @import("std");
+const builtin = @import("builtin");
 
 const hook_mod = @import("hook.zig");
 const wm_mod = @import("wm.zig");
@@ -28,7 +29,12 @@ const Args = struct {
 };
 
 fn parseArgs() ?Args {
-    var args_iter = std.process.args();
+    // Use the allocating iterator so this works on Windows (where argv lives
+    // in UTF-16) as well as POSIX. Leaks are fine — nvg exits right after.
+    var args_iter = std.process.argsWithAllocator(std.heap.page_allocator) catch {
+        printErr("Error: failed to read process arguments\n");
+        return null;
+    };
     _ = args_iter.next(); // skip argv[0]
 
     var direction: ?Direction = null;
@@ -123,7 +129,25 @@ fn parseArgs() ?Args {
 }
 
 fn printUsage() void {
-    std.fs.File.stderr().writeAll(
+    const usage = if (comptime builtin.os.tag == .windows)
+        \\Usage: nvg <left|right|up|down> [options]
+        \\
+        \\Generic focus navigation between window manager windows and applications.
+        \\
+        \\Options:
+        \\  -t, --timeout <ms>       IPC timeout in milliseconds (default: 100)
+        \\  --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
+        \\                             Available: nvim
+        \\  --wm <name>              Window manager backend (default: auto-detect)
+        \\                             Available: glazewm
+        \\  -v, --version            Print version
+        \\  -h, --help               Print this help
+        \\
+        \\Environment:
+        \\  NVG_DEBUG=1              Enable debug logging to stderr
+        \\  GLAZEWM_PORT             Override the default GlazeWM IPC port (6123)
+        \\
+    else
         \\Usage: nvg <left|right|up|down> [options]
         \\
         \\Generic focus navigation between window manager windows and applications.
@@ -148,7 +172,8 @@ fn printUsage() void {
         \\  DWM_FIFO                 dwm FIFO path for dwmfifo patch (default: /tmp/dwm.fifo)
         \\  XDG_RUNTIME_DIR          Used to locate Hyprland and Neovim sockets
         \\
-    ) catch {};
+    ;
+    std.fs.File.stderr().writeAll(usage) catch {};
 }
 
 fn printErr(msg: []const u8) void {
@@ -183,22 +208,28 @@ pub fn main() void {
 }
 
 // Import all sub-module tests so they're run with `zig build test`.
+// Linux-only modules are gated so the test binary still builds on Windows.
 test {
     _ = @import("direction.zig");
     _ = @import("focus.zig");
     _ = @import("wm.zig");
-    _ = @import("sway.zig");
-    _ = @import("hyprland.zig");
-    _ = @import("niri.zig");
-    _ = @import("river.zig");
-    _ = @import("dwm.zig");
     _ = @import("msgpack.zig");
     _ = @import("process.zig");
     _ = @import("hook.zig");
     _ = @import("net.zig");
     _ = @import("log.zig");
+    _ = @import("platform.zig");
     _ = @import("hooks/nvim.zig");
-    _ = @import("hooks/tmux.zig");
-    _ = @import("hooks/wezterm.zig");
-    _ = @import("hooks/kitty.zig");
+    if (comptime builtin.os.tag == .windows) {
+        _ = @import("glazewm.zig");
+    } else {
+        _ = @import("sway.zig");
+        _ = @import("hyprland.zig");
+        _ = @import("niri.zig");
+        _ = @import("river.zig");
+        _ = @import("dwm.zig");
+        _ = @import("hooks/tmux.zig");
+        _ = @import("hooks/wezterm.zig");
+        _ = @import("hooks/kitty.zig");
+    }
 }

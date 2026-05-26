@@ -1,5 +1,11 @@
 /// Shared networking utilities for Unix socket communication.
+///
+/// Linux-only. The Windows build doesn't use Unix sockets — GlazeWM is
+/// reached via TCP/WebSocket, and the nvim hook uses named pipes via
+/// kernel32. Each function in this module guards against Windows
+/// instantiation with a compile-time check.
 const std = @import("std");
+const builtin = @import("builtin");
 const posix = std.posix;
 
 /// Maximum Unix socket path length we store in backend structs. The Linux
@@ -35,7 +41,17 @@ pub fn readExact(fd: posix.fd_t, buf: []u8) !void {
 }
 
 /// Set both send and receive timeouts on a socket.
+///
+/// On Windows this is a no-op — the only caller is the UnixSocketTransport
+/// in the nvim hook, which is gated to non-Windows targets. The Windows
+/// fd_t is a SOCKET opaque, incompatible with the POSIX setsockopt API
+/// we use here.
 pub fn setTimeouts(fd: posix.fd_t, timeout_ms: u32) !void {
+    if (comptime builtin.os.tag == .windows) return;
+    return setTimeoutsPosix(fd, timeout_ms);
+}
+
+fn setTimeoutsPosix(fd: posix.fd_t, timeout_ms: u32) !void {
     if (timeout_ms == 0) return;
     const tv = posix.timeval{
         .sec = @intCast(timeout_ms / 1000),
@@ -47,6 +63,7 @@ pub fn setTimeouts(fd: posix.fd_t, timeout_ms: u32) !void {
 }
 
 test "makeUnixAddr sets path correctly" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const addr = try makeUnixAddr("/tmp/test.sock");
     const expected = "/tmp/test.sock";
     try std.testing.expectEqualStrings(expected, addr.path[0..expected.len]);
@@ -54,11 +71,13 @@ test "makeUnixAddr sets path correctly" {
 }
 
 test "makeUnixAddr rejects too-long path" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const long_path = "a" ** 200;
     try std.testing.expectError(error.SocketPathTooLong, makeUnixAddr(long_path));
 }
 
 test "writeAll and readExact round-trip through pipe" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const fds = try posix.pipe();
     defer posix.close(fds[0]);
     defer posix.close(fds[1]);
@@ -72,6 +91,7 @@ test "writeAll and readExact round-trip through pipe" {
 }
 
 test "readExact returns error on closed pipe" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const fds = try posix.pipe();
     posix.close(fds[1]); // close write end
     defer posix.close(fds[0]);
@@ -81,6 +101,7 @@ test "readExact returns error on closed pipe" {
 }
 
 test "setTimeouts with zero is no-op" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const fd = try posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0);
     defer posix.close(fd);
     // timeout_ms = 0 should return immediately without setting options
@@ -88,6 +109,7 @@ test "setTimeouts with zero is no-op" {
 }
 
 test "setTimeouts sets timeout on valid socket" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
     const fd = try posix.socket(posix.AF.UNIX, posix.SOCK.STREAM, 0);
     defer posix.close(fd);
     try setTimeouts(fd, 500);

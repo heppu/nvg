@@ -3,13 +3,13 @@
 /// Enabled by setting the NVG_DEBUG=1 environment variable.
 /// Logs to stderr to avoid interfering with normal operation.
 const std = @import("std");
-const posix = std.posix;
+const platform = @import("platform.zig");
 
 var debug_enabled: ?bool = null;
 
 pub fn isEnabled() bool {
     if (debug_enabled) |enabled| return enabled;
-    const val = posix.getenv("NVG_DEBUG") orelse {
+    const val = platform.getenv("NVG_DEBUG") orelse {
         debug_enabled = false;
         return false;
     };

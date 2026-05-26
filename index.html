@@ -166,7 +166,8 @@
   #tab-hypr:checked  ~ .tabbar label[for="tab-hypr"],
   #tab-niri:checked  ~ .tabbar label[for="tab-niri"],
   #tab-river:checked ~ .tabbar label[for="tab-river"],
-  #tab-dwm:checked   ~ .tabbar label[for="tab-dwm"] {
+  #tab-dwm:checked   ~ .tabbar label[for="tab-dwm"],
+  #tab-glaze:checked ~ .tabbar label[for="tab-glaze"] {
     color: var(--green);
     text-shadow: 0 0 8px rgba(74, 246, 38, 0.35);
   }
@@ -175,7 +176,8 @@
   #tab-hypr:checked  ~ .tabbar label[for="tab-hypr"]::before,
   #tab-niri:checked  ~ .tabbar label[for="tab-niri"]::before,
   #tab-river:checked ~ .tabbar label[for="tab-river"]::before,
-  #tab-dwm:checked   ~ .tabbar label[for="tab-dwm"]::before {
+  #tab-dwm:checked   ~ .tabbar label[for="tab-dwm"]::before,
+  #tab-glaze:checked ~ .tabbar label[for="tab-glaze"]::before {
     content: "▸ ";
     color: var(--green);
   }
@@ -184,7 +186,8 @@
   #tab-hypr:checked  ~ .panel[data-panel="hypr"],
   #tab-niri:checked  ~ .panel[data-panel="niri"],
   #tab-river:checked ~ .panel[data-panel="river"],
-  #tab-dwm:checked   ~ .panel[data-panel="dwm"] {
+  #tab-dwm:checked   ~ .panel[data-panel="dwm"],
+  #tab-glaze:checked ~ .panel[data-panel="glaze"] {
     display: block;
   }
 
@@ -372,6 +375,8 @@
 curl -Lo nvg https://github.com/heppu/nvg/releases/latest/download/nvg-linux-amd64
 chmod +x nvg
 sudo mv nvg /usr/local/bin/</pre>
+<pre><span class="c"># windows amd64 (powershell) — ensure %USERPROFILE%\bin is on PATH</span>
+Invoke-WebRequest https://github.com/heppu/nvg/releases/latest/download/nvg-windows-amd64.exe -OutFile $env:USERPROFILE\bin\nvg.exe</pre>
 </section>
 
 <section id="setup">
@@ -384,6 +389,7 @@ sudo mv nvg /usr/local/bin/</pre>
   <input type="radio" name="setup-tab" id="tab-niri">
   <input type="radio" name="setup-tab" id="tab-river">
   <input type="radio" name="setup-tab" id="tab-dwm">
+  <input type="radio" name="setup-tab" id="tab-glaze">
 
   <div class="tabbar" role="tablist">
     <label for="tab-sway">sway</label><span class="sep">·</span>
@@ -391,7 +397,8 @@ sudo mv nvg /usr/local/bin/</pre>
     <label for="tab-hypr">hyprland</label><span class="sep">·</span>
     <label for="tab-niri">niri</label><span class="sep">·</span>
     <label for="tab-river">river</label><span class="sep">·</span>
-    <label for="tab-dwm">dwm</label>
+    <label for="tab-dwm">dwm</label><span class="sep">·</span>
+    <label for="tab-glaze">glazewm</label>
   </div>
 
   <div class="panel" data-panel="sway">
@@ -450,6 +457,19 @@ static const Key keys[] = {
     { MODKEY, XK_k, spawn, {.v = nvg_up}    },
     { MODKEY, XK_l, spawn, {.v = nvg_right} },
 };</pre>
+  </div>
+
+  <div class="panel" data-panel="glaze">
+    <p class="meta">windows · auto-detected · speaks GlazeWM's WebSocket IPC on <code>127.0.0.1:6123</code> directly (no plugin). Edit <code>~/.glzr/glazewm/config.yaml</code> and replace the <code>focus</code> keybindings with <code>shell-exec</code> calls. Set <code>GLAZEWM_PORT</code> if you moved the IPC port.</p>
+<pre>keybindings:
+  - commands: ["shell-exec nvg left"]
+    bindings: ["alt+h"]
+  - commands: ["shell-exec nvg down"]
+    bindings: ["alt+j"]
+  - commands: ["shell-exec nvg up"]
+    bindings: ["alt+k"]
+  - commands: ["shell-exec nvg right"]
+    bindings: ["alt+l"]</pre>
   </div>
 </div>
 </section>
