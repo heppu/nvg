@@ -29,6 +29,67 @@ SPAWNED_PIDS=()
 # Path to the glazewm CLI. Overridable for non-standard install locations.
 GLAZE_BIN="${GLAZE_BIN:-glazewm}"
 
+# Where winget/choco drop GlazeWM. Set by install_deps (MSYS/MINGW form),
+# consumed by _resolve_glaze_bin.
+GLAZE_PROGFILES=""
+GLAZE_LOCALAPPDATA=""
+
+# _resolve_glaze_bin — if glazewm isn't already usable, look in the usual
+# install locations and point GLAZE_BIN at it. Returns 0 once GLAZE_BIN is
+# runnable (on PATH or as an absolute path), 1 otherwise.
+_resolve_glaze_bin() {
+    command -v "$GLAZE_BIN" >/dev/null 2>&1 && return 0
+    [[ -x "$GLAZE_BIN" ]] && return 0
+    local candidate
+    # Prefer the `cli/` shim — the top-level glazewm.exe carries a manifest
+    # that asks for UAC elevation; the CLI shim next to it does not.
+    for candidate in \
+        "${GLAZE_PROGFILES:-}/glzr.io/GlazeWM/cli/glazewm.exe" \
+        "${GLAZE_LOCALAPPDATA:-}/Programs/glzr.io/GlazeWM/cli/glazewm.exe" \
+        "${GLAZE_LOCALAPPDATA:-}/Microsoft/WinGet/Links/glazewm.exe" \
+        "${GLAZE_PROGFILES:-}/glzr.io/GlazeWM/glazewm.exe" \
+        "${GLAZE_LOCALAPPDATA:-}/Programs/glzr.io/GlazeWM/glazewm.exe"
+    do
+        if [[ -n "$candidate" && -x "$candidate" ]]; then
+            GLAZE_BIN="$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# _install_glazewm — install GlazeWM via winget (with retries) then choco.
+_install_glazewm() {
+    if command -v winget >/dev/null 2>&1; then
+        # The hosted runner's winget source index intermittently fails to
+        # refresh ("Failed in attempting to update the source: winget" /
+        # 0x8a15000f "Data required by the source is missing"), so the package
+        # search returns nothing. Reset the source and retry before giving up.
+        # --accept-*-agreements skip the first-run/licence TUI prompts.
+        local attempt
+        for attempt in 1 2 3; do
+            log_info "winget install GlazeWM (attempt $attempt)..."
+            winget install --id glzr-io.GlazeWM --source winget \
+                --accept-source-agreements --accept-package-agreements \
+                --silent --disable-interactivity || true
+            _resolve_glaze_bin && return 0
+            log_warn "GlazeWM not present after winget attempt $attempt; resetting winget source"
+            winget source reset --force winget >/dev/null 2>&1 || true
+            winget source update >/dev/null 2>&1 || true
+            sleep 3
+        done
+    fi
+
+    # Fallback: chocolatey is pre-installed on the windows-latest runner.
+    if command -v choco >/dev/null 2>&1; then
+        log_info "Falling back to choco install glazewm..."
+        choco install glazewm -y --no-progress || true
+        _resolve_glaze_bin && return 0
+    fi
+
+    return 1
+}
+
 install_deps() {
     log_info "Installing GlazeWM dependencies..."
 
@@ -37,69 +98,36 @@ install_deps() {
     # user session. Normalise Windows-style paths to MSYS/MINGW form
     # (`C:\Program Files` → `/c/Program Files`) — bash exec fails with
     # `Permission denied` on mixed-slash paths.
-    local localappdata="${LOCALAPPDATA:-}"
-    local progfiles="${PROGRAMFILES:-${ProgramFiles:-C:/Program Files}}"
+    GLAZE_LOCALAPPDATA="${LOCALAPPDATA:-}"
+    GLAZE_PROGFILES="${PROGRAMFILES:-${ProgramFiles:-C:/Program Files}}"
     if command -v cygpath >/dev/null 2>&1; then
-        [[ -n "$localappdata" ]] && localappdata="$(cygpath -u "$localappdata")"
-        progfiles="$(cygpath -u "$progfiles")"
+        [[ -n "$GLAZE_LOCALAPPDATA" ]] && GLAZE_LOCALAPPDATA="$(cygpath -u "$GLAZE_LOCALAPPDATA")"
+        GLAZE_PROGFILES="$(cygpath -u "$GLAZE_PROGFILES")"
     fi
+    # winget drops a shim in %LOCALAPPDATA%\Microsoft\WinGet\Links\ that's added
+    # to the *user* PATH — invisible to the current shell. Add it ourselves.
+    [[ -n "$GLAZE_LOCALAPPDATA" ]] && export PATH="$GLAZE_LOCALAPPDATA/Microsoft/WinGet/Links:$PATH"
 
-    # Skip silently if glazewm is already on PATH.
-    if ! command -v "$GLAZE_BIN" >/dev/null 2>&1; then
-        if command -v winget >/dev/null 2>&1; then
-            # --accept-source-agreements: skip the first-run TUI prompt
-            # --accept-package-agreements: skip per-package licence prompts
-            winget install --id glzr-io.GlazeWM \
-                --accept-source-agreements --accept-package-agreements \
-                --silent --disable-interactivity || true
-
-            # winget drops a shim in %LOCALAPPDATA%\Microsoft\WinGet\Links\
-            # that's added to the *user* PATH — invisible to the current
-            # shell. Add it ourselves, then fall back to common install dirs.
-            if [[ -n "$localappdata" ]]; then
-                export PATH="$localappdata/Microsoft/WinGet/Links:$PATH"
-            fi
-
-            if ! command -v "$GLAZE_BIN" >/dev/null 2>&1; then
-                # Prefer the `cli/` shim — the top-level glazewm.exe carries
-                # a manifest that asks for UAC elevation; the CLI shim
-                # next to it does not.
-                for candidate in \
-                    "${progfiles}/glzr.io/GlazeWM/cli/glazewm.exe" \
-                    "${localappdata}/Programs/glzr.io/GlazeWM/cli/glazewm.exe" \
-                    "${localappdata}/Microsoft/WinGet/Links/glazewm.exe" \
-                    "${progfiles}/glzr.io/GlazeWM/glazewm.exe" \
-                    "${localappdata}/Programs/glzr.io/GlazeWM/glazewm.exe"
-                do
-                    if [[ -n "$candidate" && -x "$candidate" ]]; then
-                        GLAZE_BIN="$candidate"
-                        break
-                    fi
-                done
-            fi
-        elif command -v choco >/dev/null 2>&1; then
-            choco install glazewm -y --no-progress
-        else
-            log_fail "no installer available (winget/choco not found)"
+    if ! _resolve_glaze_bin; then
+        if ! _install_glazewm; then
+            log_fail "could not install GlazeWM (winget/choco both failed)"
             return 1
         fi
     fi
 
-    if ! command -v "$GLAZE_BIN" >/dev/null 2>&1 && [[ ! -x "$GLAZE_BIN" ]]; then
-        log_fail "GlazeWM CLI not on PATH after install (tried: $GLAZE_BIN)"
+    if ! _resolve_glaze_bin; then
+        log_fail "GlazeWM CLI not found after install (tried: $GLAZE_BIN)"
         return 1
     fi
     log_info "GlazeWM CLI: $GLAZE_BIN"
 
     if ! command -v jq >/dev/null 2>&1; then
-        if command -v winget >/dev/null 2>&1; then
-            winget install --id stedolan.jq \
-                --accept-source-agreements --accept-package-agreements \
-                --silent --disable-interactivity || true
-        elif command -v choco >/dev/null 2>&1; then
-            choco install jq -y --no-progress
-        fi
+        winget install --id jqlang.jq --source winget \
+            --accept-source-agreements --accept-package-agreements \
+            --silent --disable-interactivity 2>/dev/null \
+            || choco install jq -y --no-progress 2>/dev/null || true
     fi
+    command -v jq >/dev/null 2>&1 || log_warn "jq not found; GlazeWM queries will fail"
 }
 
 start_wm() {
