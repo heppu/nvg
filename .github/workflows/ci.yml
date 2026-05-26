@@ -158,13 +158,6 @@ jobs:
     needs: ci
     runs-on: windows-latest
     timeout-minutes: 30
-    # Best effort for now: GlazeWM starts but doesn't bind its IPC port on
-    # the hosted Windows runner (the desktop session works for spawning
-    # plain GUI apps, but GlazeWM never opens 127.0.0.1:6123). The Linux
-    # e2e suite still gates merges; this job lets us iterate without
-    # blocking PRs until we find a runner config that lets GlazeWM
-    # come up fully.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -183,7 +176,6 @@ jobs:
         env:
           NVG_BIN: ${{ runner.temp }}/nvg.exe
           JUNIT_XML: ${{ github.workspace }}/test-results-glazewm.xml
-          GLAZE_DUMP_TREE: "1"
         run: bash test/e2e/test-glazewm.sh
 
       - name: Upload test results to Codecov
