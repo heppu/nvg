@@ -214,6 +214,14 @@ _focused_handle() {
         | jq -r '.data.focused.handle // empty' 2>/dev/null || true
 }
 
+# glaze_cmd — run a GlazeWM command. `glazewm command` uses clap subcommands,
+# so the command and its flags must be passed as SEPARATE arguments
+# (`glazewm command focus --direction left`), NOT as one quoted string — a
+# quoted string fails with "unrecognized subcommand".
+glaze_cmd() {
+    "$GLAZE_BIN" command "$@" >/dev/null 2>&1 || true
+}
+
 # spawn_window — open a new GUI window for GlazeWM to tile.
 # We capture its PID so wm_cleanup can kill it without leaving zombies.
 #
@@ -224,13 +232,6 @@ _focused_handle() {
 # top-level window that stays open until killed and is reliably managed by
 # GlazeWM. On the windows-latest runner (Windows Server) this is classic
 # single-window-per-process notepad, so each launch yields a new tiled window.
-# glaze_cmd — run a GlazeWM command. The CLI takes the whole command as ONE
-# argument (`glazewm command "focus --direction left"`), so callers must pass
-# the command string as a single word.
-glaze_cmd() {
-    "$GLAZE_BIN" command "$1" >/dev/null 2>&1 || true
-}
-
 spawn_window() {
     # GlazeWM chooses each split's direction from the focused window's current
     # dimensions (BSP-style), so a third window nests *perpendicular* (e.g.
@@ -239,7 +240,7 @@ spawn_window() {
     # `focus --direction right`. Insertion follows the focused container's
     # tiling direction, so force it horizontal *before* spawning — the new
     # window then joins the row as a flat sibling instead of nesting.
-    glaze_cmd "set-tiling-direction --tiling-direction horizontal"
+    glaze_cmd set-tiling-direction horizontal
 
     # Remember what was focused so we can detect when GlazeWM focuses the new
     # window (its handle will differ). All our windows are notepad, so the
@@ -268,7 +269,7 @@ spawn_window() {
         5 "GlazeWM focus on new window" || true
     sleep 1
     # Make the new window's container horizontal too (belt and suspenders).
-    glaze_cmd "set-tiling-direction --tiling-direction horizontal"
+    glaze_cmd set-tiling-direction horizontal
 
     # Diagnostic: dump the container tree so failures show the actual layout.
     if [[ -n "${GLAZE_DUMP_TREE:-}" ]]; then
@@ -299,7 +300,7 @@ get_focused() {
 }
 
 wm_focus() {
-    glaze_cmd "focus --direction $1"
+    glaze_cmd focus --direction "$1"
 }
 
 run_nvg() {
