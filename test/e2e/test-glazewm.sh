@@ -200,14 +200,22 @@ wm_cleanup() {
     cleanup
 }
 
-# spawn_window — open a new cmd.exe window that sleeps for 5 minutes.
+# spawn_window — open a new GUI window for GlazeWM to tile.
 # We capture its PID so wm_cleanup can kill it without leaving zombies.
+#
+# We use notepad.exe rather than a `cmd.exe` console: a console started via
+# `Start-Process` in CI has no real console stdin, so commands like
+# `timeout`/`pause` abort immediately ("Input redirection is not supported")
+# and the window closes before GlazeWM can tile it. notepad is a plain Win32
+# top-level window that stays open until killed and is reliably managed by
+# GlazeWM. On the windows-latest runner (Windows Server) this is classic
+# single-window-per-process notepad, so each launch yields a new tiled window.
 spawn_window() {
     # `powershell Start-Process -PassThru` returns the process object; print
     # its PID so we can track it.
     local pid
     pid=$(powershell -NoProfile -Command \
-        "(Start-Process -FilePath cmd.exe -ArgumentList '/c','timeout','/t','300','/nobreak' -PassThru).Id" \
+        "(Start-Process -FilePath notepad.exe -PassThru).Id" \
         2>/dev/null | tr -d '\r\n')
     if [[ -n "$pid" ]]; then
         SPAWNED_PIDS+=("$pid")
