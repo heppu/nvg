@@ -120,7 +120,15 @@ general:
 workspaces:
   - name: '1'
 
-window_rules: []
+# Manage *only* the notepad windows we spawn. The CI desktop has ambient
+# windows (the runner's hosted-compute-agent, stray system dialogs) that
+# would otherwise tile alongside our notepads and break the shared test's
+# "go to leftmost, navigate right N times" assumptions. `not_regex` ignores
+# every window whose process name isn't exactly "notepad".
+window_rules:
+  - commands: ['ignore']
+    match:
+      - window_process: { not_regex: '^notepad$' }
 
 binding_modes: []
 
