@@ -106,24 +106,16 @@ start_wm() {
     GLAZE_CONFIG="${USERPROFILE:-$HOME}/.glzr/glazewm/config.yaml"
     mkdir -p "$(dirname "$GLAZE_CONFIG")"
 
-    # Minimal config: tiling layout, no startup commands, no animations.
-    # We rely on the IPC for everything — no keybindings needed in the
-    # config because the tests drive focus directly through the CLI.
+    # Minimal config: one workspace, no keybindings, no startup commands.
+    # We drive focus through the IPC directly. Anything we don't set falls
+    # back to GlazeWM defaults (the schema is strict — `outer_gap` for
+    # example must be a RectDelta struct, not a string).
     cat > "$GLAZE_CONFIG" <<'GLAZECFG'
 general:
   startup_commands: []
   shutdown_commands: []
   config_reload_commands: []
   focus_follows_cursor: false
-
-gaps:
-  inner_gap: '0px'
-  outer_gap: '0px'
-
-window_effects:
-  focused_window:
-    border:
-      enabled: false
 
 workspaces:
   - name: '1'
