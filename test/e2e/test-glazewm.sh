@@ -154,18 +154,35 @@ GLAZECFG
     then
         log_warn "GlazeWM did not bind 127.0.0.1:6123 within 30s"
         if [[ -f "$GLAZE_LOG" ]]; then
-            log_warn "GlazeWM log ($GLAZE_LOG):"
+            log_warn "GlazeWM stdout/stderr ($GLAZE_LOG):"
             cat "$GLAZE_LOG" >&2 || true
         else
-            log_warn "no log file at $GLAZE_LOG"
+            log_warn "no stdout/stderr log at $GLAZE_LOG"
+        fi
+        # GlazeWM writes its own error log to ~/.glzr/glazewm/errors.log
+        # (~ = $USERPROFILE on Windows). Fatal startup errors land there and
+        # are also shown as a Win32 message box — which on a CI runner
+        # hangs invisibly forever.
+        local glaze_errors="${USERPROFILE:-$HOME}/.glzr/glazewm/errors.log"
+        if [[ -f "$glaze_errors" ]]; then
+            log_warn "GlazeWM errors.log ($glaze_errors):"
+            cat "$glaze_errors" >&2 || true
+        else
+            log_warn "no errors.log at $glaze_errors"
         fi
         if command -v tasklist >/dev/null 2>&1; then
             log_warn "running glazewm-like processes:"
             tasklist 2>/dev/null | grep -i glaze >&2 || log_warn "  (none)"
         fi
         if command -v netstat >/dev/null 2>&1; then
-            log_warn "TCP listeners on 6123:"
+            log_warn "TCP listeners (port 6123 or first 10 listeners):"
             netstat -ano 2>/dev/null | grep -E '6123|LISTENING' | head -10 >&2 || true
+        fi
+        # Look for any open Win32 dialog windows — a fatal init error would
+        # show one with a class like "#32770".
+        if command -v powershell >/dev/null 2>&1; then
+            log_warn "open Win32 top-level windows owned by glazewm:"
+            powershell -NoProfile -Command "Get-Process glazewm -ErrorAction SilentlyContinue | Select-Object Id, MainWindowTitle, ProcessName | Format-Table -AutoSize" 2>/dev/null >&2 || true
         fi
         return 1
     fi
