@@ -200,6 +200,12 @@ wm_cleanup() {
     cleanup
 }
 
+# _focused_handle — print the handle (HWND) of the focused window, or empty.
+_focused_handle() {
+    "$GLAZE_BIN" query focused 2>/dev/null \
+        | jq -r '.data.focused.handle // empty' 2>/dev/null || true
+}
+
 # spawn_window — open a new GUI window for GlazeWM to tile.
 # We capture its PID so wm_cleanup can kill it without leaving zombies.
 #
@@ -211,6 +217,12 @@ wm_cleanup() {
 # GlazeWM. On the windows-latest runner (Windows Server) this is classic
 # single-window-per-process notepad, so each launch yields a new tiled window.
 spawn_window() {
+    # Remember what was focused so we can detect when GlazeWM focuses the new
+    # window (its handle will differ). All our windows are notepad, so the
+    # handle — not the process name — is what distinguishes them.
+    local before_handle
+    before_handle=$(_focused_handle)
+
     # `powershell Start-Process -PassThru` returns the process object; print
     # its PID so we can track it.
     local pid
@@ -220,6 +232,19 @@ spawn_window() {
     if [[ -n "$pid" ]]; then
         SPAWNED_PIDS+=("$pid")
     fi
+
+    # Wait until GlazeWM has managed and focused the new window, then force its
+    # container to a horizontal tiling direction. GlazeWM chooses each split's
+    # direction from the focused window's current dimensions (BSP-style), so a
+    # third window nests *perpendicular* (e.g. below window 2) — which breaks
+    # the shared test's assumption of a flat left-to-right row and leaves the
+    # last window unreachable via `focus --direction right`. Forcing every
+    # container horizontal makes directional focus descend the tree in order,
+    # so all windows form one navigable row.
+    wait_until '[[ -n "$(_focused_handle)" && "$(_focused_handle)" != "'"$before_handle"'" ]]' \
+        5 "GlazeWM focus on new window" || true
+    "$GLAZE_BIN" command set-tiling-direction --tiling-direction horizontal \
+        >/dev/null 2>&1 || true
 }
 
 count_windows() {
