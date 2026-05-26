@@ -187,6 +187,42 @@ jobs:
           flags: glazewm
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # Build the Microsoft Store MSIX package. Validates packaging stays correct;
+  # the artifact is submittable once the Partner Center identity is set via the
+  # MSIX_* repo variables (see packaging/msix/README.md). Unset variables fall
+  # back to placeholders so the build still validates on every PR.
+  msix:
+    needs: ci
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v8
+        with:
+          name: release-binaries
+
+      - name: Build MSIX
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          $params = @{ ExePath = 'nvg-windows-amd64.exe'; OutFile = "$env:RUNNER_TEMP/nvg.msix" }
+          if ($env:MSIX_IDENTITY_NAME)          { $params.IdentityName = $env:MSIX_IDENTITY_NAME }
+          if ($env:MSIX_PUBLISHER)              { $params.Publisher = $env:MSIX_PUBLISHER }
+          if ($env:MSIX_PUBLISHER_DISPLAY_NAME) { $params.PublisherDisplayName = $env:MSIX_PUBLISHER_DISPLAY_NAME }
+          ./packaging/msix/build-msix.ps1 @params
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: nvg-msix
+          path: ${{ runner.temp }}/nvg.msix
+          if-no-files-found: error
+
   release:
     needs: [ci, e2e, e2e-windows]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
