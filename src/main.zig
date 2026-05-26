@@ -180,7 +180,27 @@ fn printErr(msg: []const u8) void {
     std.fs.File.stderr().writeAll(msg) catch {};
 }
 
+// The Windows binary is linked as a GUI-subsystem app so that launching it
+// from a tiling-WM keybinding (GlazeWM `shell-exec nvg ...`) does not spawn a
+// console window that flashes — and gets briefly tiled — on every keypress.
+// A GUI-subsystem process starts with no console, so when nvg is instead run
+// from a terminal, attach to the parent's console (best effort) so that
+// --help/--version/error output still has somewhere to go. All output paths
+// already swallow write errors, so when there is no console nothing happens.
+const win = struct {
+    const w = std.os.windows;
+    const ATTACH_PARENT_PROCESS: w.DWORD = 0xFFFF_FFFF; // (DWORD)-1
+    extern "kernel32" fn AttachConsole(dwProcessId: w.DWORD) callconv(.winapi) w.BOOL;
+};
+
+fn attachParentConsole() void {
+    if (comptime builtin.os.tag != .windows) return;
+    _ = win.AttachConsole(win.ATTACH_PARENT_PROCESS);
+}
+
 pub fn main() void {
+    attachParentConsole();
+
     const args = parseArgs() orelse std.process.exit(1);
     log.log("direction={s} timeout={d}ms hooks={d} wm={s}", .{
         @tagName(args.direction),

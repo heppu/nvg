@@ -17,6 +17,10 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "config", .module = config.createModule() }},
         }),
     });
+    // On Windows, link as a GUI-subsystem app so launching nvg from a WM
+    // keybinding doesn't flash (and briefly tile) a console window. nvg
+    // re-attaches to the parent console at startup for terminal output.
+    if (target.result.os.tag == .windows) exe.subsystem = .Windows;
 
     b.installArtifact(exe);
 
@@ -121,6 +125,8 @@ pub fn build(b: *std.Build) void {
                 .imports = &.{.{ .name = "config", .module = config.createModule() }},
             }),
         });
+        // GUI subsystem on Windows — no console window flash from WM keybinds.
+        if (rt.query.os_tag == .windows) release_exe.subsystem = .Windows;
         const install_release = b.addInstallArtifact(release_exe, .{});
         const checksum = ChecksumStep.create(b, release_exe);
         checksum.step.dependOn(&install_release.step);
