@@ -183,6 +183,7 @@ jobs:
         env:
           NVG_BIN: ${{ runner.temp }}/nvg.exe
           JUNIT_XML: ${{ github.workspace }}/test-results-glazewm.xml
+          GLAZE_DUMP_TREE: "1"
         run: bash test/e2e/test-glazewm.sh
 
       - name: Upload test results to Codecov

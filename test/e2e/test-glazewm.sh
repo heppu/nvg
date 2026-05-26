@@ -216,7 +216,23 @@ _focused_handle() {
 # top-level window that stays open until killed and is reliably managed by
 # GlazeWM. On the windows-latest runner (Windows Server) this is classic
 # single-window-per-process notepad, so each launch yields a new tiled window.
+# glaze_cmd — run a GlazeWM command. The CLI takes the whole command as ONE
+# argument (`glazewm command "focus --direction left"`), so callers must pass
+# the command string as a single word.
+glaze_cmd() {
+    "$GLAZE_BIN" command "$1" >/dev/null 2>&1 || true
+}
+
 spawn_window() {
+    # GlazeWM chooses each split's direction from the focused window's current
+    # dimensions (BSP-style), so a third window nests *perpendicular* (e.g.
+    # below window 2). That breaks the shared test's assumption of a flat
+    # left-to-right row and leaves the last window unreachable via
+    # `focus --direction right`. Insertion follows the focused container's
+    # tiling direction, so force it horizontal *before* spawning — the new
+    # window then joins the row as a flat sibling instead of nesting.
+    glaze_cmd "set-tiling-direction --tiling-direction horizontal"
+
     # Remember what was focused so we can detect when GlazeWM focuses the new
     # window (its handle will differ). All our windows are notepad, so the
     # handle — not the process name — is what distinguishes them.
@@ -233,18 +249,24 @@ spawn_window() {
         SPAWNED_PIDS+=("$pid")
     fi
 
-    # Wait until GlazeWM has managed and focused the new window, then force its
-    # container to a horizontal tiling direction. GlazeWM chooses each split's
-    # direction from the focused window's current dimensions (BSP-style), so a
-    # third window nests *perpendicular* (e.g. below window 2) — which breaks
-    # the shared test's assumption of a flat left-to-right row and leaves the
-    # last window unreachable via `focus --direction right`. Forcing every
-    # container horizontal makes directional focus descend the tree in order,
-    # so all windows form one navigable row.
+    # Wait until GlazeWM has managed and focused the new window, then make its
+    # container horizontal too (belt and suspenders).
     wait_until '[[ -n "$(_focused_handle)" && "$(_focused_handle)" != "'"$before_handle"'" ]]' \
         5 "GlazeWM focus on new window" || true
-    "$GLAZE_BIN" command set-tiling-direction --tiling-direction horizontal \
-        >/dev/null 2>&1 || true
+    glaze_cmd "set-tiling-direction --tiling-direction horizontal"
+
+    # Diagnostic: dump the container tree so failures show the actual layout.
+    if [[ -n "${GLAZE_DUMP_TREE:-}" ]]; then
+        log_info "layout after spawn (pid=${pid:-?}):"
+        "$GLAZE_BIN" query monitors 2>/dev/null | jq -r '
+            def show(ind):
+                (ind + .type
+                    + (if .tilingDirection then " [" + .tilingDirection + "]" else "" end)
+                    + (if .handle then " h=" + (.handle|tostring) + " " + (.processName // "") else "" end)),
+                (.children[]? | show(ind + "  "));
+            .data.monitors[]? | show("")
+        ' >&2 2>/dev/null || true
+    fi
 }
 
 count_windows() {
@@ -262,7 +284,7 @@ get_focused() {
 }
 
 wm_focus() {
-    "$GLAZE_BIN" command "focus --direction $1" >/dev/null 2>&1 || true
+    glaze_cmd "focus --direction $1"
 }
 
 run_nvg() {
