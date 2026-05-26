@@ -247,20 +247,27 @@ spawn_window() {
     local before_handle
     before_handle=$(_focused_handle)
 
-    # `powershell Start-Process -PassThru` returns the process object; print
-    # its PID so we can track it.
+    # Launch notepad and wait until its UI message loop goes idle
+    # (WaitForInputIdle), i.e. it has finished initializing and issuing its
+    # startup foreground-focus grabs. A freshly launched notepad otherwise
+    # re-asserts foreground a beat after creation and GlazeWM snaps focus back
+    # to it — which races with, and clobbers, the directional-focus commands
+    # the shared test issues immediately after spawning. `-PassThru` yields the
+    # process object so we can print its PID for cleanup.
     local pid
     pid=$(powershell -NoProfile -Command \
-        "(Start-Process -FilePath notepad.exe -PassThru).Id" \
+        '$p = Start-Process -FilePath notepad.exe -PassThru; $p.WaitForInputIdle(5000) | Out-Null; $p.Id' \
         2>/dev/null | tr -d '\r\n')
     if [[ -n "$pid" ]]; then
         SPAWNED_PIDS+=("$pid")
     fi
 
-    # Wait until GlazeWM has managed and focused the new window, then make its
-    # container horizontal too (belt and suspenders).
+    # Wait until GlazeWM has managed and focused the new window, then let focus
+    # settle before the test starts issuing directional-focus commands.
     wait_until '[[ -n "$(_focused_handle)" && "$(_focused_handle)" != "'"$before_handle"'" ]]' \
         5 "GlazeWM focus on new window" || true
+    sleep 1
+    # Make the new window's container horizontal too (belt and suspenders).
     glaze_cmd "set-tiling-direction --tiling-direction horizontal"
 
     # Diagnostic: dump the container tree so failures show the actual layout.
