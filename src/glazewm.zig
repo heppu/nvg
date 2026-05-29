@@ -70,6 +70,18 @@ fn readPortFromEnv() ?u16 {
     return std.fmt.parseInt(u16, raw, 10) catch null;
 }
 
+/// Probe whether a GlazeWM IPC server is reachable on the configured port.
+/// Returns true if a TCP connection succeeds — does NOT perform the WebSocket
+/// handshake. Used by the Windows usage dialog as a quick "is the WM up?"
+/// check when nvg is launched from the Start menu / Microsoft Store tile.
+pub fn isRunning() bool {
+    if (comptime builtin.os.tag != .windows) return false;
+    const port = readPortFromEnv() orelse default_port;
+    var stream = std.net.tcpConnectToHost(std.heap.page_allocator, default_host, port) catch return false;
+    stream.close();
+    return true;
+}
+
 // ─── IPC ───
 
 /// Open a TCP connection, perform the WebSocket handshake, send `request`

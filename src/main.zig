@@ -14,6 +14,17 @@ const wm_mod = @import("wm.zig");
 const focus_mod = @import("focus.zig");
 const log = @import("log.zig");
 
+// Windows-only: probe whether GlazeWM is currently reachable. On other
+// targets, stub it out so this file still compiles.
+const glazewm_mod = if (builtin.os.tag == .windows)
+    @import("glazewm.zig")
+else
+    struct {
+        pub fn isRunning() bool {
+            return false;
+        }
+    };
+
 const Hook = hook_mod.Hook;
 const Backend = wm_mod.Backend;
 const Direction = @import("direction.zig").Direction;
@@ -190,16 +201,81 @@ fn printErr(msg: []const u8) void {
 const win = struct {
     const w = std.os.windows;
     const ATTACH_PARENT_PROCESS: w.DWORD = 0xFFFF_FFFF; // (DWORD)-1
+    const MB_OK: w.UINT = 0x00000000;
+    const MB_ICONINFORMATION: w.UINT = 0x00000040;
     extern "kernel32" fn AttachConsole(dwProcessId: w.DWORD) callconv(.winapi) w.BOOL;
+    extern "user32" fn MessageBoxW(hWnd: ?w.HWND, lpText: w.LPCWSTR, lpCaption: w.LPCWSTR, uType: w.UINT) callconv(.winapi) c_int;
 };
 
+// Set by attachParentConsole — true iff we successfully attached to a parent
+// console (i.e. we were launched from a terminal). False for the
+// Start-menu/Microsoft-Store tile click, where there is no parent console.
+var have_console = false;
+
 fn attachParentConsole() void {
+    if (comptime builtin.os.tag != .windows) {
+        have_console = true; // POSIX always has stderr.
+        return;
+    }
+    have_console = win.AttachConsole(win.ATTACH_PARENT_PROCESS) != 0;
+}
+
+// True when no user-provided arguments were passed (argv == [exe]).
+// Used to recognise the Start-tile / Microsoft-Store click on Windows: a CLI
+// has no work to do then, and exiting with a non-zero code on a GUI-subsystem
+// app is what Store certification flags as "crash at launch". Pop a small
+// info dialog instead and exit 0.
+fn noUserArgs() bool {
+    var it = std.process.argsWithAllocator(std.heap.page_allocator) catch return false;
+    _ = it.next(); // argv[0]
+    return it.next() == null;
+}
+
+fn showStoreUsageDialog() void {
     if (comptime builtin.os.tag != .windows) return;
-    _ = win.AttachConsole(win.ATTACH_PARENT_PROCESS);
+    // utf8ToUtf16LeStringLiteral walks every byte at comptime; the bodies below
+    // are long enough together to blow the default 1000-branch limit.
+    @setEvalBranchQuota(10_000);
+    const title = std.unicode.utf8ToUtf16LeStringLiteral("nvg");
+    const body_ready = std.unicode.utf8ToUtf16LeStringLiteral(
+        "nvg is ready.\n\n" ++
+            "It is a command-line tool — clicking this icon does nothing on " ++
+            "its own. Bind nvg in your GlazeWM config to use it:\n\n" ++
+            "    keybindings:\n" ++
+            "      - commands: [\"shell-exec nvg left\"]\n" ++
+            "        bindings: [\"alt+h\"]\n\n" ++
+            "Run `nvg --help` in a terminal for the full usage.\n\n" ++
+            "https://github.com/heppu/nvg",
+    );
+    const body_not_found = std.unicode.utf8ToUtf16LeStringLiteral(
+        "No compatible window manager found on this system.\n\n" ++
+            "nvg is a command-line focus-navigation tool that works alongside a " ++
+            "tiling window manager. On Windows it currently supports GlazeWM — " ++
+            "install it and make sure it is running, then bind nvg in your " ++
+            "config:\n\n" ++
+            "    keybindings:\n" ++
+            "      - commands: [\"shell-exec nvg left\"]\n" ++
+            "        bindings: [\"alt+h\"]\n\n" ++
+            "GlazeWM: https://glazewm.com\n" ++
+            "nvg:     https://github.com/heppu/nvg",
+    );
+    const body: [*:0]const u16 = if (glazewm_mod.isRunning()) body_ready else body_not_found;
+    _ = win.MessageBoxW(null, body, title, win.MB_OK | win.MB_ICONINFORMATION);
 }
 
 pub fn main() void {
     attachParentConsole();
+
+    // Store/Start-tile click: no parent console, no arguments. The CLI has
+    // nothing to do, but exiting silently with a non-zero code looks like a
+    // crash to Windows App Certification. Show a brief usage dialog and exit
+    // cleanly so the launch is a normal, visible no-op.
+    if (comptime builtin.os.tag == .windows) {
+        if (!have_console and noUserArgs()) {
+            showStoreUsageDialog();
+            std.process.exit(0);
+        }
+    }
 
     const args = parseArgs() orelse std.process.exit(1);
     log.log("direction={s} timeout={d}ms hooks={d} wm={s}", .{
