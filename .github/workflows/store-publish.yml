@@ -83,6 +83,7 @@ jobs:
           CLIENT_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
         run: |
           msstore reconfigure `
+            --verbose `
             --tenantId     $env:TENANT_ID `
             --sellerId     $env:SELLER_ID `
             --clientId     $env:CLIENT_ID `
