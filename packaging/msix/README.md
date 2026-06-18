@@ -62,9 +62,62 @@ double-click-install, if the self-signed cert is trusted on the machine.)
    and upload it to the app's **Packages** in a Store submission. Fill in the
    listing (description, screenshots) and submit. Microsoft signs + certifies.
 
-After the first manual submission, submissions can be automated in the release
-workflow via the [Store submission API](https://learn.microsoft.com/en-us/windows/uwp/monetize/create-and-manage-submissions-using-windows-store-services)
-/ the `msstore` CLI (a follow-up; needs Partner Center credentials as secrets).
+## Automated submission (after the listing is live)
+
+The `.github/workflows/store-publish.yml` workflow uses the
+[`msstore` CLI](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/overview)
+to push a new MSIX to the Store on every published GitHub release (also runs
+manually via *workflow_dispatch*). Microsoft's docs require two preconditions
+before automated submission works:
+
+- the app must already be **published and live** in the Store (the first
+  submission must clear certification manually), and
+- the product must be **free** (paid products aren't yet supported).
+
+### One-time setup
+
+1. **Register a Microsoft Entra ID (Azure AD) app** —
+   <https://entra.microsoft.com/> → *App registrations* → *New registration*.
+2. **Associate that app with Partner Center** — Partner Center →
+   *Account settings* → *User management* → *Microsoft Entra applications* →
+   *Add Microsoft Entra application* → select the registered app → assign the
+   **Manager** role.
+3. **Create a client secret** for the app registration — Entra → *Certificates
+   & secrets* → *New client secret*. Copy the **value** immediately (it's
+   only shown once).
+4. **Collect the four values**:
+   - **Tenant ID** — Entra → *Overview* → *Tenant ID*
+   - **Client ID** — Entra → *App registrations* → your app → *Application
+     (client) ID*
+   - **Client secret** — the value from step 3
+   - **Seller ID** — Partner Center → *Account settings* → *Identifiers*
+5. **Get the Store product ID** — Partner Center → your app →
+   *Product identity* (a 12-character ID like `9ABCDE1FGH2I`).
+6. **Add the GitHub repository secrets** (Settings → *Secrets and variables* →
+   *Actions* → *Secrets*):
+   - `AZURE_AD_TENANT_ID`
+   - `AZURE_AD_APPLICATION_CLIENT_ID`
+   - `AZURE_AD_APPLICATION_SECRET`
+   - `SELLER_ID`
+7. **Add the Store product ID as a repo variable** (Settings → *Secrets and
+   variables* → *Actions* → *Variables*):
+   - `MSSTORE_PRODUCT_ID`
+
+(The existing `MSIX_IDENTITY_NAME` / `MSIX_PUBLISHER` /
+`MSIX_PUBLISHER_DISPLAY_NAME` variables are reused — they stamp the package
+identity at build time and are public values, so they stay as variables.)
+
+### How it runs
+
+- **Auto:** GitHub release published → workflow downloads
+  `nvg-windows-amd64.exe` from that release, packs the MSIX with the Store
+  identity, configures `msstore`, and runs `msstore publish <path> -id $PRODUCT_ID`.
+- **Manual:** Actions → *Publish to Microsoft Store* → *Run workflow*; pass an
+  explicit tag input or let it default to the latest release.
+
+Microsoft Learn references:
+[Publish app updates to Microsoft Store with GitHub Actions](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/github-actions),
+[msstore CLI commands](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/commands).
 
 ## Notes
 
