@@ -37,6 +37,14 @@ On Windows, only the Neovim hook is enabled. The terminal hooks (tmux/WezTerm/Ki
 
 ## Installation
 
+### winget (Windows)
+
+Install from the Microsoft Store via winget. No SmartScreen prompt, and `nvg` is added to your `PATH` automatically.
+
+```powershell
+winget install nvg -s msstore
+```
+
 ### Download binary
 
 Prebuilt binaries for Linux (amd64, arm64, armv7) and Windows (amd64) are available from
