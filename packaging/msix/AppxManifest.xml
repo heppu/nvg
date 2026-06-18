@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template for nvg (Microsoft Store distribution).
+
+  This is a TEMPLATE: build-msix.ps1 substitutes the __TOKENS__ below.
+  The Identity values come from Partner Center once the app name is reserved
+  (Partner Center > your app > Product management > Product identity), e.g.
+
+    __IDENTITY_NAME__          -> "1234BitBrewers.nvg"   (Package/Identity/Name)
+    __PUBLISHER__              -> "CN=ABCDEF01-2345-..." (Package/Identity/Publisher)
+    __PUBLISHER_DISPLAY_NAME__ -> "Bit Brewers"          (PublisherDisplayName)
+
+  When submitted to the Store, Microsoft re-signs the package with its own
+  certificate, so no code-signing certificate is required here.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity
+    Name="__IDENTITY_NAME__"
+    Publisher="__PUBLISHER__"
+    Version="__VERSION__"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>nvg</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Seamless directional focus navigation between your window manager and applications, without plugins.</Description>
+  </Properties>
+
+  <Dependencies>
+    <!-- 10.0.17763 (1809) is the floor for windows.appExecutionAlias via MSIX. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <!-- runFullTrust: nvg is a packaged Win32 app. It enumerates processes
+       (Toolhelp), maps HWND->PID, and talks to nvim (named pipes) and GlazeWM
+       (TCP) — all of which require full-trust desktop behaviour. -->
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="nvg" Executable="nvg.exe" EntryPoint="Windows.FullTrustApplication">
+      <!-- Keep a normal app-list entry. Hiding it makes a "headless" app,
+           which the Store rejects without a special waiver. Clicking the Start
+           entry launches nvg with no args (it just exits) — harmless; nvg is
+           normally invoked by the WM with a direction argument. -->
+      <uap:VisualElements
+        DisplayName="nvg"
+        Description="Seamless directional focus navigation between your window manager and applications, without plugins."
+        BackgroundColor="#0b0d0c"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Puts `nvg` on PATH (via %LOCALAPPDATA%\Microsoft\WindowsApps) so a
+             tiling WM can launch it, e.g. GlazeWM `shell-exec nvg left`. -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="nvg.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="nvg.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>
