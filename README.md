@@ -32,7 +32,7 @@ The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3S
 | tmux        | Linux           | Full support |
 | WezTerm     | Linux           | Full support |
 | Kitty       | Linux           | Full support (requires `allow_remote_control yes` in `kitty.conf`) |
-| Herdr       | Linux           | Full support (splits first, then up/down step between workspaces) |
+| Herdr       | Linux           | Full support (splits first, then up/down step between workspaces). `herdr --remote` is left to the WM |
 
 On Windows, only the Neovim hook is enabled. The terminal hooks (tmux/WezTerm/Kitty/Herdr) rely on reading other processes' environment blocks from `/proc`, which has no clean Windows equivalent.
 

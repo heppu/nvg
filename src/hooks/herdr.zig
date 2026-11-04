@@ -43,6 +43,7 @@ const max_edge_moves: u32 = 50;
 fn detect(child_pid: i32, cmd: []const u8, exe: []const u8, arg: []const u8) ?i32 {
     if (!isHerdrBinary(cmd) and !isHerdrBinary(exe)) return null;
     if (!isClientArg(arg)) return null;
+    if (isRemoteAttach(child_pid)) return null;
     return child_pid;
 }
 
@@ -51,13 +52,39 @@ fn isHerdrBinary(s: []const u8) bool {
 }
 
 /// The TUI client runs as `herdr`, `herdr --session <name>` or
-/// `herdr session attach <name>`. Remote attach talks to a server on another
-/// machine, and everything else is the server or a one-shot CLI call.
+/// `herdr session attach <name>`. Everything else is the server, the thin
+/// client spawned by remote attach (`herdr client`) or a one-shot CLI call.
 fn isClientArg(arg: []const u8) bool {
     if (arg.len == 0) return true;
     if (std.mem.eql(u8, arg, "session")) return true;
-    if (std.mem.eql(u8, arg, "--remote") or std.mem.eql(u8, arg, "--machine")) return false;
+    if (isRemoteFlag(arg)) return false;
     return arg[0] == '-';
+}
+
+fn isRemoteFlag(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, "--remote") or std.mem.startsWith(u8, arg, "--remote=") or
+        std.mem.eql(u8, arg, "--machine") or std.mem.startsWith(u8, arg, "--machine=");
+}
+
+/// `herdr --remote <host>` attaches to a server on another machine and only
+/// forwards the client protocol, so its JSON API is unreachable from here.
+/// The flag can follow `--session`, so the whole command line is checked.
+fn isRemoteAttach(pid: i32) bool {
+    var path_buf: [64]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "/proc/{d}/cmdline", .{pid}) catch return false;
+    var buf: [4096]u8 = undefined;
+    const cmdline = process.readFileToBuffer(path, &buf) orelse return false;
+    return cmdlineIsRemote(cmdline);
+}
+
+fn cmdlineIsRemote(cmdline: []const u8) bool {
+    var it = std.mem.splitScalar(u8, cmdline, 0);
+    _ = it.next();
+    while (it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--")) return false;
+        if (isRemoteFlag(arg)) return true;
+    }
+    return false;
 }
 
 /// Check if herdr can move focus in the given direction.
@@ -431,10 +458,35 @@ test "detect matches herdr client" {
 
 test "detect rejects server, remote attach and CLI calls" {
     try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "server"));
+    try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "client"));
     try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "--remote"));
+    try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "--remote=workbox"));
     try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "--machine"));
+    try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "--machine=build"));
     try testing.expectEqual(@as(?i32, null), detect(10, "herdr", "", "pane"));
     try testing.expectEqual(@as(?i32, null), detect(10, "/usr/local/bin/herdr", "", "agent"));
+}
+
+test "cmdlineIsRemote finds the remote flag after other options" {
+    try testing.expect(cmdlineIsRemote("herdr\x00--remote\x00workbox\x00"));
+    try testing.expect(cmdlineIsRemote("herdr\x00--remote=workbox\x00"));
+    try testing.expect(cmdlineIsRemote("herdr\x00--session\x00agents\x00--remote\x00workbox\x00"));
+    try testing.expect(cmdlineIsRemote("herdr\x00--remote\x00workbox\x00--session\x00agents\x00"));
+    try testing.expect(cmdlineIsRemote("herdr\x00--machine\x00build\x00pane\x00list\x00"));
+}
+
+test "cmdlineIsRemote ignores local clients and arguments after --" {
+    try testing.expect(!cmdlineIsRemote("herdr\x00"));
+    try testing.expect(!cmdlineIsRemote("herdr\x00--session\x00agents\x00"));
+    try testing.expect(!cmdlineIsRemote("herdr\x00session\x00attach\x00agents\x00"));
+    try testing.expect(!cmdlineIsRemote("herdr\x00--\x00--remote\x00"));
+    try testing.expect(!cmdlineIsRemote("--remote\x00"));
+    try testing.expect(!cmdlineIsRemote(""));
+}
+
+test "isRemoteAttach is false for the current process and a missing pid" {
+    try testing.expect(!isRemoteAttach(@intCast(std.os.linux.getpid())));
+    try testing.expect(!isRemoteAttach(-1));
 }
 
 test "detect rejects non-herdr" {
