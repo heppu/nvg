@@ -73,7 +73,7 @@ pub const DetectedList = struct {
 /// All registered hooks. Order here doesn't matter — detection order
 /// is determined by process tree depth (innermost wins).
 ///
-/// On Windows only the nvim hook is enabled. tmux/wezterm/kitty discovery
+/// On Windows only the nvim hook is enabled. tmux/wezterm/kitty/herdr discovery
 /// relies on reading other processes' environment blocks from /proc, which
 /// has no clean equivalent on Windows.
 pub const all_hooks = if (builtin.os.tag == .windows) [_]*const Hook{
@@ -83,6 +83,7 @@ pub const all_hooks = if (builtin.os.tag == .windows) [_]*const Hook{
     &@import("hooks/tmux.zig").hook,
     &@import("hooks/wezterm.zig").hook,
     &@import("hooks/kitty.zig").hook,
+    &@import("hooks/herdr.zig").hook,
 };
 
 /// Walk the process tree from focused_pid and detect all matching hooks.
@@ -143,6 +144,13 @@ test "findHookByName returns kitty hook" {
     const h = findHookByName("kitty");
     try std.testing.expect(h != null);
     try std.testing.expectEqualStrings("kitty", h.?.name);
+}
+
+test "findHookByName returns herdr hook" {
+    if (comptime builtin.os.tag == .windows) return error.SkipZigTest;
+    const h = findHookByName("herdr");
+    try std.testing.expect(h != null);
+    try std.testing.expectEqualStrings("herdr", h.?.name);
 }
 
 test "findHookByName returns null for unknown" {

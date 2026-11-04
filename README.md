@@ -32,8 +32,9 @@ The window manager is auto-detected from environment variables (`SWAYSOCK`, `I3S
 | tmux        | Linux           | Full support |
 | WezTerm     | Linux           | Full support |
 | Kitty       | Linux           | Full support (requires `allow_remote_control yes` in `kitty.conf`) |
+| Herdr       | Linux           | Full support (splits first, then up/down step between workspaces) |
 
-On Windows, only the Neovim hook is enabled. The terminal hooks (tmux/WezTerm/Kitty) rely on reading other processes' environment blocks from `/proc`, which has no clean Windows equivalent.
+On Windows, only the Neovim hook is enabled. The terminal hooks (tmux/WezTerm/Kitty/Herdr) rely on reading other processes' environment blocks from `/proc`, which has no clean Windows equivalent.
 
 ## Installation
 
@@ -90,7 +91,7 @@ bindsym $mod+l exec nvg right
 ```
 
 That's it. nvg automatically detects the running window manager and
-navigates through Neovim, tmux, WezTerm, and Kitty splits/panes before
+navigates through Neovim, tmux, WezTerm, Kitty, and Herdr splits/panes before
 moving to the next window.
 
 To explicitly select a window manager backend:
@@ -238,6 +239,7 @@ If you've moved GlazeWM's IPC server to a non-default port, set
 | `TMUX_TMPDIR` | Tmux socket directory (defaults to `/tmp`) |
 | `WEZTERM_PANE` / `WEZTERM_UNIX_SOCKET` | Read from the focused process's `/proc/<pid>/environ` to drive the WezTerm hook |
 | `KITTY_LISTEN_ON` / `KITTY_WINDOW_ID` | Read from the focused process's `/proc/<pid>/environ` to drive the Kitty hook |
+| `HERDR_SOCKET_PATH` / `HERDR_SESSION` | Read from the herdr client's `/proc/<pid>/environ` to locate the Herdr socket (default `~/.config/herdr/herdr.sock`) |
 | `GLAZEWM_PORT` | Override the default GlazeWM IPC port (`6123`) |
 
 ### CLI Options
@@ -248,7 +250,7 @@ Usage: nvg <left|right|up|down> [options]
 Options:
   -t, --timeout <ms>       IPC timeout in milliseconds (default: 100)
   --hooks <hook,hook,...>  Comma-separated hooks to enable (default: all)
-                             Linux:   nvim, tmux, wezterm, kitty
+                             Linux:   nvim, tmux, wezterm, kitty, herdr
                              Windows: nvim
   --wm <name>              Window manager backend (default: auto-detect)
                              Linux:   sway, i3, hyprland, niri, river, dwm
