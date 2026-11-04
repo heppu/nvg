@@ -91,11 +91,15 @@ pub fn build(b: *std.Build) void {
     // is incompatible with kcov (see comment above coverage_tests).
     // ReleaseSafe retains debug info and safety checks while using optimized
     // codegen that avoids ptrace/breakpoint issues seen with Debug builds.
+    // The e2e jobs run this binary on a different CI VM than the one that
+    // builds it, so native CPU features such as AVX-512 would SIGILL there.
+    var coverage_e2e_query = target.query;
+    coverage_e2e_query.cpu_model = .baseline;
     const coverage_e2e_exe = b.addExecutable(.{
         .name = "nvg",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
-            .target = target,
+            .target = b.resolveTargetQuery(coverage_e2e_query),
             .optimize = .ReleaseSafe,
             .imports = &.{.{ .name = "config", .module = config.createModule() }},
         }),
